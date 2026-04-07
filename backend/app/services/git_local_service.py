@@ -18,6 +18,8 @@ class GitLocalService:
         Clones a repository securely using the provided token to a local directory.
         """
         def redact(text: str) -> str:
+            if not text:
+                return text
             if not token:
                 return text
             return text.replace(token, "********")
@@ -29,11 +31,14 @@ class GitLocalService:
 
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if result.returncode != 0:
-                logger.error("Git clone failed: %s", result.stderr)
+                logger.error("Git clone failed: %s", redact(result.stderr))
                 return False
             return True
+        except subprocess.TimeoutExpired as e:
+            logger.error("Clone timed out: %s", redact(str(e)))
+            return False
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error("Exception during clone: %s", str(e))
+            logger.error("Exception during clone: %s", redact(str(e)))
             return False
 
     @staticmethod

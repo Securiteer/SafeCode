@@ -17,11 +17,23 @@ litellm.suppress_debug_info = True
 
 class AIEngine:
     """Handles interactions with Language Models."""
+    _api_keys_cache: Dict[str, List[str]] = {}
+    _local_base_url_cache: Optional[str] = None
+    _cache_initialized: bool = False
 
     def __init__(self, db: Session):
         self.db = db
-        self.api_keys: Dict[str, List[str]] = {}
-        self._load_keys_from_db()
+        if not self.__class__._cache_initialized:
+            self._load_keys_from_db()
+        self.api_keys = self.__class__._api_keys_cache
+        self.local_base_url = self.__class__._local_base_url_cache
+
+    @classmethod
+    def reset_cache(cls):
+        """Force a reload of keys from the database."""
+        cls._cache_initialized = False
+        cls._api_keys_cache = {}
+        cls._local_base_url_cache = None
 
     def _load_keys_from_db(self):
         providers = [
@@ -39,14 +51,15 @@ class AIEngine:
         for provider, db_key, env_var in providers:
             conf = config_map.get(db_key)
             if conf and conf.value and isinstance(conf.value, list):
-                self.api_keys[provider] = conf.value
+                self.__class__._api_keys_cache[provider] = conf.value
             elif conf and conf.value and isinstance(conf.value, str):
-                self.api_keys[provider] = [conf.value]
+                self.__class__._api_keys_cache[provider] = [conf.value]
             else:
-                self.api_keys[provider] = []
+                self.__class__._api_keys_cache[provider] = []
 
-        local_url_conf = self.db.query(BotConfig).filter(BotConfig.key == "local_base_url").first()
-        self.local_base_url = local_url_conf.value if local_url_conf else None
+        local_url_conf = config_map.get("local_base_url")
+        self.__class__._local_base_url_cache = local_url_conf.value if local_url_conf else None
+        self.__class__._cache_initialized = True
 
     # pylint: disable=too-many-return-statements
     def _get_provider_from_model(self, model: str) -> str:
@@ -123,15 +136,8 @@ class AIEngine:
                     break
         return None
 
-    def _call_llm_with_fallback(self, model: str, messages: list, response_format: dict = None, task_type: str = "generic") -> dict:
-        original_provider = self._get_provider_from_model(model)
-
-        fallback_conf = self.db.query(BotConfig).filter(
-            BotConfig.key == "auto_fallback_random"
-        ).first()
-        auto_fallback_random = fallback_conf.value if fallback_conf else False
-
-        keys_to_try: List[Any] = self.api_keys.get(original_provider, [None])
+    def _execute_provider_call(self, model: str, provider: str, messages: list, response_format: dict = None, task_type: str = "generic", break_on_fatal: bool = True) -> Optional[dict]:
+        keys_to_try: List[Any] = self.api_keys.get(provider, [None])
         if not keys_to_try:
             keys_to_try = [None]
 
@@ -142,31 +148,40 @@ class AIEngine:
         if response_format:
             kwargs["response_format"] = response_format
 
-        if self.local_base_url and original_provider == "local":
+        if self.local_base_url and provider == "local":
             kwargs["api_base"] = self.local_base_url
 
-        result = self._attempt_call_with_keys(kwargs, keys_to_try, task_type, original_provider, model, messages, break_on_fatal=True)
+        return self._attempt_call_with_keys(kwargs, keys_to_try, task_type, provider, model, messages, break_on_fatal=break_on_fatal)
+
+    def _handle_fallback(self, messages: list, response_format: dict = None, task_type: str = "generic") -> Optional[dict]:
+        logger.warning("Falling back to random provider.")
+        # Load from DB in case we want to customize in future, but hardcode for now
+        fallbacks = ["gpt-4o-mini", "claude-3-haiku-20240307", "gemini/gemini-1.5-flash"]
+        random.shuffle(fallbacks)
+
+        for fallback_model in fallbacks:
+            fallback_provider = self._get_provider_from_model(fallback_model)
+            result = self._execute_provider_call(fallback_model, fallback_provider, messages, response_format, task_type, break_on_fatal=False)
+            if result:
+                return result
+        return None
+
+    def _call_llm_with_fallback(self, model: str, messages: list, response_format: dict = None, task_type: str = "generic") -> dict:
+        original_provider = self._get_provider_from_model(model)
+
+        result = self._execute_provider_call(model, original_provider, messages, response_format, task_type, break_on_fatal=True)
         if result:
             return result
 
+        fallback_conf = self.db.query(BotConfig).filter(
+            BotConfig.key == "auto_fallback_random"
+        ).first()
+        auto_fallback_random = fallback_conf.value if fallback_conf else False
+
         if auto_fallback_random:
-            logger.warning("Falling back from %s to random provider.", model)
-            fallbacks = ["gpt-4o-mini", "claude-3-haiku-20240307", "gemini/gemini-1.5-flash"]
-            random.shuffle(fallbacks)
-
-            for fallback_model in fallbacks:
-                fallback_provider = self._get_provider_from_model(fallback_model)
-                fallback_keys = self.api_keys.get(fallback_provider, [None])
-                if not fallback_keys:
-                    fallback_keys = [None]
-
-                kwargs["model"] = fallback_model
-                if "api_base" in kwargs:
-                    del kwargs["api_base"]
-
-                result = self._attempt_call_with_keys(kwargs, fallback_keys, task_type, fallback_provider, fallback_model, messages, break_on_fatal=False)
-                if result:
-                    return result
+            result = self._handle_fallback(messages, response_format, task_type)
+            if result:
+                return result
 
         raise ValueError(f"All LLM calls failed for task {task_type}. Original model: {model}")
 

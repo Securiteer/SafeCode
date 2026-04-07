@@ -168,7 +168,7 @@ export default function Terminal() {
                   )}
                 </motion.div>
               ))}
-              <div ref={el => bottomRefs.current[botId] = el} />
+              <div ref={el => { bottomRefs.current[botId] = el; }} />
             </div>
           </motion.div>
         ))}

@@ -4,6 +4,7 @@ Service for running Semgrep static analysis.
 import subprocess
 import json
 import logging
+import os
 from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,19 @@ class SemgrepService:
         In a real advanced RAG system, this would also parse imports and fetch related files.
         """
         try:
-            full_path = f"{directory_path}/{file_path}"
+            full_path = os.path.abspath(os.path.join(directory_path, file_path))
+            base_dir = os.path.abspath(directory_path)
+
+            # Prevent directory traversal attacks
+            if not full_path.startswith(base_dir):
+                logger.error("Directory traversal attempt: %s outside of %s", full_path, base_dir)
+                return ""
+
+            # Prevent massive files (e.g. larger than 2MB)
+            if os.path.exists(full_path) and os.path.getsize(full_path) > 2 * 1024 * 1024:
+                logger.error("File too large to process: %s", full_path)
+                return ""
+
             with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
                 return f.read()
         except Exception as e:  # pylint: disable=broad-exception-caught
