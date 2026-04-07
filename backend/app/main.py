@@ -5,7 +5,6 @@ from sqlalchemy import func
 from typing import List, Dict, Any
 import asyncio
 import redis.asyncio as aioredis
-from datetime import datetime, timedelta
 
 import sys
 import os
