@@ -7,7 +7,7 @@ from celery import shared_task
 from app.core.database import SessionLocal
 from app.services.github_service import GitHubService
 from app.services.ai_engine import AIEngine
-from app.services.terminal_logger import TerminalLogger
+from app.services.terminal_logger import TerminalLogger, LogExtra
 from app.services.semgrep_service import SemgrepService
 from app.services.git_local_service import GitLocalService
 from app.models.models import BotConfig, Vulnerability, VulnerabilityStatus, Repository, IssueFix
@@ -83,7 +83,7 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
 
             while attempts < max_attempts and not fix_successful:
                 attempts += 1
-                TerminalLogger.log(bot_id, "FIXING", f"Attempt {attempts}: Generating patch for {severity} vuln...", model=fixer_model)
+                TerminalLogger.log(bot_id, "FIXING", f"Attempt {attempts}: Generating patch for {severity} vuln...", extra=LogExtra(model=fixer_model))
 
                 fix_res = ai_engine.fix_vulnerability(code_context, desc, model=fixer_model, error_feedback=last_error)
                 new_content = fix_res.get("fixed_code", code_context)
@@ -91,10 +91,12 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
                 if "stats" in fix_res:
                     TerminalLogger.log(
                         bot_id, "COST", f"Fix generated",
-                        model=fix_res["stats"].get("model"),
-                        cost=fix_res["stats"].get("cost"),
-                        prompt_used=fix_res.get("prompt"),
-                        ai_response=fix_res.get("response")
+                        extra=LogExtra(
+                            model=fix_res["stats"].get("model", ""),
+                            cost=fix_res["stats"].get("cost", 0.0),
+                            prompt_used=fix_res.get("prompt"),
+                            ai_response=fix_res.get("response")
+                        )
                     )
 
                 if new_content == code_context:
