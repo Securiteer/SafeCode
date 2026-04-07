@@ -129,7 +129,7 @@ export default function Admin() {
             </h1>
             <p className="text-purple-300 mt-2 font-medium">Configure swarm parameters, active logic, and API credentials.</p>
           </div>
-          <Link href="/" className="mt-6 md:mt-0 flex items-center gap-2 text-gray-300 hover:text-white px-5 py-2.5 rounded-lg glass-panel hover:bg-purple-900/30 transition-all shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_20px_rgba(168,85,247,0.3)]">
+          <Link href="/" className="mt-6 md:mt-0 flex items-center gap-2 text-gray-200 hover:text-white px-6 py-3 rounded-2xl liquid-glass-panel hover:bg-white/5 transition-all">
              <Terminal className="w-4 h-4" /> Return to Uplink
           </Link>
         </header>
@@ -137,7 +137,7 @@ export default function Admin() {
         <form onSubmit={handleSave} className="space-y-8">
 
           {/* MASTER SWITCH & BEHAVIOR */}
-          <section className="glass-panel p-8 rounded-2xl space-y-6">
+          <section className="liquid-glass-panel p-8 space-y-6">
             <div className="flex items-center gap-3 mb-2 border-b border-purple-900/40 pb-4">
               <Play className="w-6 h-6 text-fuchsia-500" />
               <h2 className="text-xl font-bold text-purple-100">Operation Directives</h2>
@@ -192,7 +192,7 @@ export default function Admin() {
           </section>
 
           {/* INTELLIGENCE MATRIX (MODELS) */}
-          <section className="glass-panel p-8 rounded-2xl space-y-6">
+          <section className="liquid-glass-panel p-8 space-y-6">
             <div className="flex items-center gap-3 mb-2 border-b border-purple-900/40 pb-4">
               <Bot className="w-6 h-6 text-indigo-400" />
               <h2 className="text-xl font-bold text-purple-100">Intelligence Matrix</h2>
@@ -283,7 +283,7 @@ export default function Admin() {
           </section>
 
           {/* CREDENTIAL MATRIX */}
-          <section className="glass-panel p-8 rounded-2xl space-y-6">
+          <section className="liquid-glass-panel p-8 space-y-6">
             <div className="flex items-center gap-3 mb-2 border-b border-purple-900/40 pb-4">
               <Globe className="w-6 h-6 text-emerald-500" />
               <h2 className="text-xl font-bold text-purple-100">Credential Matrix</h2>

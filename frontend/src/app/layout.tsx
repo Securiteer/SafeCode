@@ -16,7 +16,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} bg-black min-h-screen text-white`}>{children}</body>
+      <body className={`${inter.className} min-h-screen text-white relative`}>
+        <div className="liquid-blob blob-1"></div>
+        <div className="liquid-blob blob-2"></div>
+        <div className="liquid-blob blob-3"></div>
+        <div className="relative z-10">{children}</div>
+      </body>
     </html>
   );
 }
