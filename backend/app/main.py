@@ -77,10 +77,13 @@ class ConfigUpdate(BaseModel):
 
 @app.post("/api/config")
 def update_config(payload: ConfigUpdate, db: Session = Depends(get_db)):
+    keys = list(payload.configs.keys())
+    existing_configs = db.query(BotConfig).filter(BotConfig.key.in_(keys)).all()
+    config_dict = {c.key: c for c in existing_configs}
+
     for k, v in payload.configs.items():
-        conf = db.query(BotConfig).filter(BotConfig.key == k).first()
-        if conf:
-            conf.value = v
+        if k in config_dict:
+            config_dict[k].value = v
         else:
             conf = BotConfig(key=k, value=v)
             db.add(conf)
