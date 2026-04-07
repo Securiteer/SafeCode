@@ -12,3 +12,4 @@ pydantic-settings
 python-dotenv
 PyGithub
 semgrep
+freezegun==1.5.5
