@@ -11,32 +11,21 @@ def test_load_keys_from_db_does_not_mutate_environ(monkeypatch):
 
     # Mock the query behavior to return a specific api key for openai
     def mock_query(model):
-        if model == BotConfig:
-            mock_filter = MagicMock()
-            def filter_side_effect(*args, **kwargs):
-                mock_first = MagicMock()
+        mock_filter = MagicMock()
+        def all_side_effect(*args, **kwargs):
+            mock_conf_openai = MagicMock()
+            mock_conf_openai.key = "openai_api_keys"
+            mock_conf_openai.value = ["fake-openai-key-123"]
 
-                # Inspect the SQLALchemy BinaryExpression
-                condition = args[0]
-                # We can access condition.right.value for the string we are comparing to
-                # if it is a simple comparison
-                key_val = condition.right.value if hasattr(condition, 'right') else ""
+            mock_conf_anthropic = MagicMock()
+            mock_conf_anthropic.key = "anthropic_api_keys"
+            mock_conf_anthropic.value = ["fake-anthropic-key-456"]
 
-                if key_val == "openai_api_keys":
-                    mock_conf = MagicMock()
-                    mock_conf.value = ["fake-openai-key-123"]
-                    mock_first.first.return_value = mock_conf
-                elif key_val == "anthropic_api_keys":
-                    mock_conf = MagicMock()
-                    mock_conf.value = ["fake-anthropic-key-456"]
-                    mock_first.first.return_value = mock_conf
-                else:
-                    mock_first.first.return_value = None
-                return mock_first
+            return [mock_conf_openai, mock_conf_anthropic]
 
-            mock_filter.filter.side_effect = filter_side_effect
-            return mock_filter
-        return MagicMock()
+        mock_filter.filter.return_value.all.side_effect = all_side_effect
+        mock_filter.filter.return_value.first.return_value = None # For local_base_url
+        return mock_filter
 
     mock_db.query.side_effect = mock_query
 
@@ -57,16 +46,18 @@ def test_load_keys_from_db_does_not_mutate_environ(monkeypatch):
     assert "ANTHROPIC_API_KEY" not in os.environ
 
 def test_call_llm_with_fallback_passes_api_key_explicitly(monkeypatch):
-    import litellm
+    import app.services.ai_engine
 
     mock_db = MagicMock(spec=Session)
     def mock_query(model):
         mock_filter = MagicMock()
-        mock_first = MagicMock()
-        mock_conf = MagicMock()
-        mock_conf.value = ["fake-openai-key-123"]
-        mock_first.first.return_value = mock_conf
-        mock_filter.filter.return_value = mock_first
+        def all_side_effect(*args, **kwargs):
+            mock_conf = MagicMock()
+            mock_conf.key = "openai_api_keys"
+            mock_conf.value = ["fake-openai-key-123"]
+            return [mock_conf]
+        mock_filter.filter.return_value.all.side_effect = all_side_effect
+        mock_filter.filter.return_value.first.return_value = None # For auto_fallback_random
         return mock_filter
 
     mock_db.query.side_effect = mock_query
@@ -80,8 +71,8 @@ def test_call_llm_with_fallback_passes_api_key_explicitly(monkeypatch):
     mock_response.choices[0].message.content = "Hello world"
     mock_completion.return_value = mock_response
 
-    monkeypatch.setattr(litellm, "completion", mock_completion)
-    monkeypatch.setattr(litellm, "completion_cost", MagicMock(return_value=0.01))
+    monkeypatch.setattr(app.services.ai_engine.litellm, "completion", mock_completion)
+    monkeypatch.setattr(app.services.ai_engine.litellm, "completion_cost", MagicMock(return_value=0.01))
 
     # Call the fallback function
     res = engine._call_llm_with_fallback(

@@ -20,7 +20,7 @@ class TestGitLocalService(unittest.TestCase):
 
         self.assertTrue(success)
         self.assertEqual(output, "Test passed")
-        mock_run.assert_called_once_with(["npm", "test"], cwd="/tmp/fake-dir", capture_output=True, text=True, timeout=60)
+        mock_run.assert_called_once_with(["npm", "test"], cwd="/tmp/fake-dir", capture_output=True, text=True, timeout=60, check=False)
 
     @patch('app.services.git_local_service.os.path.exists')
     @patch('app.services.git_local_service.subprocess.run')
@@ -37,7 +37,7 @@ class TestGitLocalService(unittest.TestCase):
 
         self.assertTrue(success)
         self.assertEqual(output, "Pytest passed")
-        mock_run.assert_called_once_with(["pytest"], cwd="/tmp/fake-dir", capture_output=True, text=True, timeout=60)
+        mock_run.assert_called_once_with(["pytest"], cwd="/tmp/fake-dir", capture_output=True, text=True, timeout=60, check=False)
 
     @patch('app.services.git_local_service.os.path.exists')
     @patch('app.services.git_local_service.subprocess.run')
@@ -54,7 +54,7 @@ class TestGitLocalService(unittest.TestCase):
 
         self.assertTrue(success)
         self.assertEqual(output, "Pytest passed")
-        mock_run.assert_called_once_with(["pytest"], cwd="/tmp/fake-dir", capture_output=True, text=True, timeout=60)
+        mock_run.assert_called_once_with(["pytest"], cwd="/tmp/fake-dir", capture_output=True, text=True, timeout=60, check=False)
 
     @patch('app.services.git_local_service.os.path.exists')
     def test_run_sandbox_test_no_framework(self, mock_exists):
