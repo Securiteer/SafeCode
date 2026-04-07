@@ -1,7 +1,6 @@
 import redis
 import json
 from datetime import datetime
-from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.models import TerminalLog
