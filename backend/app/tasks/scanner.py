@@ -18,6 +18,98 @@ def get_config_val(db, key, default):
     conf = db.query(BotConfig).filter(BotConfig.key == key).first()
     return conf.value if conf else default
 
+def _attempt_fix(bot_id, ai_engine, fixer_model, code_context, desc, severity, temp_dir, file_path):
+    attempts = 0
+    max_attempts = 2
+    fix_successful = False
+    last_error = None
+    new_content = code_context
+
+    while attempts < max_attempts and not fix_successful:
+        attempts += 1
+        TerminalLogger.log(bot_id, "FIXING", f"Attempt {attempts}: Generating patch for {severity} vuln...", model=fixer_model)
+
+        fix_res = ai_engine.fix_vulnerability(code_context, desc, model=fixer_model, error_feedback=last_error)
+        new_content = fix_res.get("fixed_code", code_context)
+
+        if "stats" in fix_res:
+            TerminalLogger.log(
+                bot_id, "COST", f"Fix generated",
+                model=fix_res["stats"].get("model"),
+                cost=fix_res["stats"].get("cost"),
+                prompt_used=fix_res.get("prompt"),
+                ai_response=fix_res.get("response")
+            )
+
+        if new_content == code_context:
+            TerminalLogger.log(bot_id, "ERROR", "Fixer failed to alter code.")
+            break
+
+        # Apply fix locally
+        GitLocalService.apply_local_fix(temp_dir, file_path, new_content)
+
+        TerminalLogger.log(bot_id, "TESTING", "Running sandbox tests on patched code...")
+        test_success, output = GitLocalService.run_sandbox_test(temp_dir)
+
+        if test_success:
+            TerminalLogger.log(bot_id, "SUCCESS", "Sandbox tests passed! Patch verified.")
+            fix_successful = True
+        else:
+            last_error = output[:1000] # Truncate long error logs
+            TerminalLogger.log(bot_id, "FAILED", f"Sandbox tests failed. Error: {last_error[:50]}...")
+            # Restore original code for next attempt
+            GitLocalService.apply_local_fix(temp_dir, file_path, code_context)
+
+    return fix_successful, new_content
+
+def _create_pr(db, bot_id, gh_service, repo_full_name, file_path, new_content, desc, severity, vuln_record):
+    TerminalLogger.log(bot_id, "PR", "Forking repository and preparing PR...")
+    try:
+        forked_repo = gh_service.fork_repository(repo_full_name)
+        branch_name = f"ai-sec-fix-{random.randint(1000,9999)}"
+        gh_service.create_branch_and_commit(
+            forked_repo, branch_name, file_path, new_content,
+            f"Security Fix: {desc[:50]}"
+        )
+        pr_url = gh_service.create_pull_request(
+            repo_full_name, forked_repo.owner.login, branch_name,
+            title=f"Security Fix: Automated resolution of {severity} vulnerability",
+            body=f"This PR was generated automatically by AI Security Bot.\n\n**Issue:** {desc}\n\n**Severity:** {severity.upper()}"
+        )
+        vuln_record.status = VulnerabilityStatus.FIXED
+        vuln_record.pr_url = pr_url
+        db.commit()
+        TerminalLogger.log(bot_id, "SUCCESS", f"Created PR: {pr_url}")
+    except Exception as e:
+        vuln_record.status = VulnerabilityStatus.FAILED
+        db.commit()
+        TerminalLogger.log(bot_id, "ERROR", f"Failed to create PR: {str(e)}")
+
+def _process_single_vulnerability(db, bot_id, temp_dir, repo_full_name, db_repo, v, ai_engine, fixer_model, gh_service):
+    file_path = v["file"].replace(f"{temp_dir}/", "")
+    desc = v["message"]
+    severity = v["severity"]
+
+    vuln_record = Vulnerability(
+        repo_id=db_repo.id, file_path=file_path, severity=severity,
+        description=desc, status=VulnerabilityStatus.FOUND
+    )
+    db.add(vuln_record)
+    db.commit()
+
+    TerminalLogger.log(bot_id, "RAG", f"Extracting context for {file_path}...")
+    code_context = SemgrepService.get_file_context(temp_dir, file_path)
+
+    if not code_context:
+        return
+
+    fix_successful, new_content = _attempt_fix(
+        bot_id, ai_engine, fixer_model, code_context, desc, severity, temp_dir, file_path
+    )
+
+    if fix_successful:
+        _create_pr(db, bot_id, gh_service, repo_full_name, file_path, new_content, desc, severity, vuln_record)
+
 @shared_task
 def scan_repository_task(repo_full_name: str, bot_id: str):
     db = SessionLocal()
@@ -57,87 +149,9 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
             TerminalLogger.log(bot_id, "FOUND", f"Static analysis found {len(vulns)} issues.")
 
         for v in vulns:
-            file_path = v["file"].replace(f"{temp_dir}/", "")
-            desc = v["message"]
-            severity = v["severity"]
-
-            vuln_record = Vulnerability(
-                repo_id=db_repo.id, file_path=file_path, severity=severity,
-                description=desc, status=VulnerabilityStatus.FOUND
+            _process_single_vulnerability(
+                db, bot_id, temp_dir, repo_full_name, db_repo, v, ai_engine, fixer_model, gh_service
             )
-            db.add(vuln_record)
-            db.commit()
-
-            TerminalLogger.log(bot_id, "RAG", f"Extracting context for {file_path}...")
-            code_context = SemgrepService.get_file_context(temp_dir, file_path)
-
-            if not code_context:
-                continue
-
-            # 3. FIX LOOP (With Sandbox Testing)
-            attempts = 0
-            max_attempts = 2
-            fix_successful = False
-            last_error = None
-            new_content = code_context
-
-            while attempts < max_attempts and not fix_successful:
-                attempts += 1
-                TerminalLogger.log(bot_id, "FIXING", f"Attempt {attempts}: Generating patch for {severity} vuln...", model=fixer_model)
-
-                fix_res = ai_engine.fix_vulnerability(code_context, desc, model=fixer_model, error_feedback=last_error)
-                new_content = fix_res.get("fixed_code", code_context)
-
-                if "stats" in fix_res:
-                    TerminalLogger.log(
-                        bot_id, "COST", f"Fix generated",
-                        model=fix_res["stats"].get("model"),
-                        cost=fix_res["stats"].get("cost"),
-                        prompt_used=fix_res.get("prompt"),
-                        ai_response=fix_res.get("response")
-                    )
-
-                if new_content == code_context:
-                    TerminalLogger.log(bot_id, "ERROR", "Fixer failed to alter code.")
-                    break
-
-                # Apply fix locally
-                GitLocalService.apply_local_fix(temp_dir, file_path, new_content)
-
-                TerminalLogger.log(bot_id, "TESTING", "Running sandbox tests on patched code...")
-                test_success, output = GitLocalService.run_sandbox_test(temp_dir)
-
-                if test_success:
-                    TerminalLogger.log(bot_id, "SUCCESS", "Sandbox tests passed! Patch verified.")
-                    fix_successful = True
-                else:
-                    last_error = output[:1000] # Truncate long error logs
-                    TerminalLogger.log(bot_id, "FAILED", f"Sandbox tests failed. Error: {last_error[:50]}...")
-                    # Restore original code for next attempt
-                    GitLocalService.apply_local_fix(temp_dir, file_path, code_context)
-
-            if fix_successful:
-                TerminalLogger.log(bot_id, "PR", "Forking repository and preparing PR...")
-                try:
-                    forked_repo = gh_service.fork_repository(repo_full_name)
-                    branch_name = f"ai-sec-fix-{random.randint(1000,9999)}"
-                    gh_service.create_branch_and_commit(
-                        forked_repo, branch_name, file_path, new_content,
-                        f"Security Fix: {desc[:50]}"
-                    )
-                    pr_url = gh_service.create_pull_request(
-                        repo_full_name, forked_repo.owner.login, branch_name,
-                        title=f"Security Fix: Automated resolution of {severity} vulnerability",
-                        body=f"This PR was generated automatically by AI Security Bot.\n\n**Issue:** {desc}\n\n**Severity:** {severity.upper()}"
-                    )
-                    vuln_record.status = VulnerabilityStatus.FIXED
-                    vuln_record.pr_url = pr_url
-                    db.commit()
-                    TerminalLogger.log(bot_id, "SUCCESS", f"Created PR: {pr_url}")
-                except Exception as e:
-                    vuln_record.status = VulnerabilityStatus.FAILED
-                    db.commit()
-                    TerminalLogger.log(bot_id, "ERROR", f"Failed to create PR: {str(e)}")
 
     except Exception as e:
         logger.error(f"Error in scan_repository_task: {e}")
