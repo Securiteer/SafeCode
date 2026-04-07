@@ -1,9 +1,14 @@
+"""
+Application configuration module.
+"""
 import os
 from typing import List, Union
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 
+
 class Settings(BaseSettings):
+    """Application settings using Pydantic BaseSettings."""
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./ai_sec.db")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
@@ -22,5 +27,6 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
 
 settings = Settings()
