@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Dict, Any
-import json
 import asyncio
 import redis.asyncio as aioredis
 from datetime import datetime, timedelta
