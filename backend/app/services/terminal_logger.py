@@ -1,4 +1,6 @@
-import redis
+"""
+Logger for the AI Security Bot terminal.
+"""
 import json
 from datetime import datetime
 from dataclasses import dataclass
@@ -41,7 +43,7 @@ class TerminalLogger:
             db.commit()
             db.refresh(db_log)
             log_id = db_log.id
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Error saving terminal log to DB: {e}")
             log_id = None
         finally:
