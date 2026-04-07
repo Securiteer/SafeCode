@@ -2,6 +2,7 @@
 Logger for the AI Security Bot terminal.
 """
 import json
+import redis
 from datetime import datetime
 from dataclasses import dataclass
 from app.core.config import settings

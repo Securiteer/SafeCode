@@ -4,7 +4,7 @@ Service for interacting with the GitHub API.
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from dataclasses import dataclass
+from typing import Optional, List, Any
 from github import Github, GithubException
 
 
@@ -126,6 +126,18 @@ class GitHubService:
             else:
                 raise
 
+    def has_open_pull_request(self, repo_full_name: str, head_branch: str) -> bool:
+        """Check if there is already an open pull request from the given head branch."""
+        if not self.gh:
+            return False
+        try:
+            repo = self.gh.get_repo(repo_full_name)
+            pulls = repo.get_pulls(state="open", head=head_branch)
+            return pulls.totalCount > 0
+        except Exception as e:
+            logger.error(f"Error checking existing PRs for {repo_full_name}: {str(e)}")
+            return False
+
     def create_pull_request(self, params: PullRequestParams) -> str:
         if not self.gh:
             raise ValueError("GitHub token not configured.")
@@ -133,6 +145,10 @@ class GitHubService:
         repo = self.gh.get_repo(params.original_repo_full_name)
         head = f"{params.fork_owner}:{params.branch_name}"
         base = repo.default_branch
+
+        if self.has_open_pull_request(params.original_repo_full_name, head):
+            logger.info(f"PR already exists for {head} on {params.original_repo_full_name}")
+            return ""
 
         try:
             pr = repo.create_pull(title=params.title, body=params.body, head=head, base=base)

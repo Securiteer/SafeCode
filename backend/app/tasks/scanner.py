@@ -65,24 +65,47 @@ def _attempt_fix(bot_id, ai_engine, fixer_model, code_context, desc, severity, t
 
     return fix_successful, new_content
 
+from app.services.github_service import PullRequestParams
+
 def _create_pr(db, bot_id, gh_service, repo_full_name, file_path, new_content, desc, severity, vuln_record):
     TerminalLogger.log(bot_id, "PR", "Forking repository and preparing PR...")
     try:
         forked_repo = gh_service.fork_repository(repo_full_name)
         branch_name = f"ai-sec-fix-{random.randint(1000,9999)}"
-        gh_service.create_branch_and_commit(
-            forked_repo, branch_name, file_path, new_content,
-            f"Security Fix: {desc[:50]}"
+
+        # We can't definitively check PR existence before picking a random branch name,
+        # but we can check if a similar branch/PR already exists if we had deterministic branch names.
+        # For now, the GitHub service checks based on the generated branch name before creation.
+
+        commit_data = CommitData(
+            branch_name=branch_name,
+            file_path=file_path,
+            new_content=new_content,
+            commit_message=f"Security Fix: {desc[:50]}"
         )
-        pr_url = gh_service.create_pull_request(
-            repo_full_name, forked_repo.owner.login, branch_name,
+
+        gh_service.create_branch_and_commit(forked_repo, commit_data)
+
+        pr_params = PullRequestParams(
+            original_repo_full_name=repo_full_name,
+            fork_owner=forked_repo.owner.login,
+            branch_name=branch_name,
             title=f"Security Fix: Automated resolution of {severity} vulnerability",
             body=f"This PR was generated automatically by AI Security Bot.\n\n**Issue:** {desc}\n\n**Severity:** {severity.upper()}"
         )
-        vuln_record.status = VulnerabilityStatus.FIXED
-        vuln_record.pr_url = pr_url
-        db.commit()
-        TerminalLogger.log(bot_id, "SUCCESS", f"Created PR: {pr_url}")
+
+        pr_url = gh_service.create_pull_request(pr_params)
+
+        if pr_url:
+            vuln_record.status = VulnerabilityStatus.FIXED
+            vuln_record.pr_url = pr_url
+            db.commit()
+            TerminalLogger.log(bot_id, "SUCCESS", f"Created PR: {pr_url}")
+        else:
+            vuln_record.status = VulnerabilityStatus.FAILED
+            db.commit()
+            TerminalLogger.log(bot_id, "ERROR", f"PR already exists or could not be created")
+
     except Exception as e:
         vuln_record.status = VulnerabilityStatus.FAILED
         db.commit()
