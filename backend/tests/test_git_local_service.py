@@ -1,10 +1,50 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import os
 import subprocess
 from app.services.git_local_service import GitLocalService
 
 class TestGitLocalService(unittest.TestCase):
+    @patch('app.services.git_local_service.subprocess.run')
+    def test_clone_repository_success(self, mock_run):
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_run.return_value = mock_process
+
+        success = GitLocalService.clone_repository(
+            "https://github.com/foo/bar.git",
+            "/tmp/foo",
+            "fake_token"
+        )
+        self.assertTrue(success)
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        self.assertIn("clone", args[0])
+        self.assertTrue(any("fake_token" in arg for arg in args[0]))
+
+    @patch('app.services.git_local_service.subprocess.run')
+    def test_clone_repository_failure(self, mock_run):
+        mock_process = MagicMock()
+        mock_process.returncode = 1
+        mock_process.stderr = "fatal: repository not found"
+        mock_run.return_value = mock_process
+
+        success = GitLocalService.clone_repository(
+            "https://github.com/foo/bar.git",
+            "/tmp/foo",
+            "fake_token"
+        )
+        self.assertFalse(success)
+
+    @patch('app.services.git_local_service.subprocess.run')
+    def test_clone_repository_timeout(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git", "clone"], timeout=60)
+        success = GitLocalService.clone_repository(
+            "https://github.com/foo/bar.git",
+            "/tmp/foo",
+            "fake_token"
+        )
+        self.assertFalse(success)
+
     @patch('app.services.git_local_service.os.path.exists')
     @patch('app.services.git_local_service.subprocess.run')
     def test_run_sandbox_test_js(self, mock_run, mock_exists):

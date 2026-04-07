@@ -1,9 +1,7 @@
 import os
-import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock
 from sqlalchemy.orm import Session
 from app.services.ai_engine import AIEngine
-from app.models.models import BotConfig
 
 def test_load_keys_from_db_does_not_mutate_environ(monkeypatch):
     # Setup mock DB session

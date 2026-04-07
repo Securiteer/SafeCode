@@ -30,7 +30,7 @@ def _attempt_fix(bot_id, ai_engine, fixer_model, code_context, desc, severity, t
 
     while attempts < max_attempts and not fix_successful:
         attempts += 1
-        TerminalLogger.log(bot_id, "FIXING", f"Attempt {attempts}: Generating patch for {severity} vuln...", model=fixer_model)
+        TerminalLogger.log(bot_id, "FIXING", f"Attempt {attempts}: Generating patch for {severity} vuln...", extra=LogExtra(model=fixer_model))
 
         fix_res = ai_engine.fix_vulnerability(code_context, desc, model=fixer_model, error_feedback=last_error)
         new_content = fix_res.get("fixed_code", code_context)
@@ -38,10 +38,12 @@ def _attempt_fix(bot_id, ai_engine, fixer_model, code_context, desc, severity, t
         if "stats" in fix_res:
             TerminalLogger.log(
                 bot_id, "COST", f"Fix generated",
-                model=fix_res["stats"].get("model"),
-                cost=fix_res["stats"].get("cost"),
-                prompt_used=fix_res.get("prompt"),
-                ai_response=fix_res.get("response")
+                extra=LogExtra(
+                    model=fix_res["stats"].get("model"),
+                    cost=fix_res["stats"].get("cost"),
+                    prompt_used=fix_res.get("prompt"),
+                    ai_response=fix_res.get("response")
+                )
             )
 
         if new_content == code_context:
@@ -67,15 +69,23 @@ def _attempt_fix(bot_id, ai_engine, fixer_model, code_context, desc, severity, t
 
 from app.services.github_service import PullRequestParams
 
+import hashlib
+
 def _create_pr(db, bot_id, gh_service, repo_full_name, file_path, new_content, desc, severity, vuln_record):
     TerminalLogger.log(bot_id, "PR", "Forking repository and preparing PR...")
     try:
         forked_repo = gh_service.fork_repository(repo_full_name)
-        branch_name = f"ai-sec-fix-{random.randint(1000,9999)}"
 
-        # We can't definitively check PR existence before picking a random branch name,
-        # but we can check if a similar branch/PR already exists if we had deterministic branch names.
-        # For now, the GitHub service checks based on the generated branch name before creation.
+        # Use deterministic branch name based on the file and severity to avoid duplicates
+        file_hash = hashlib.md5(file_path.encode()).hexdigest()[:8]
+        branch_name = f"ai-sec-fix-{severity}-{file_hash}"
+
+        head = f"{forked_repo.owner.login}:{branch_name}"
+        if gh_service.has_open_pull_request(repo_full_name, head):
+            TerminalLogger.log(bot_id, "INFO", f"A PR for this fix already exists: {head}")
+            vuln_record.status = VulnerabilityStatus.FAILED
+            db.commit()
+            return
 
         commit_data = CommitData(
             branch_name=branch_name,
@@ -136,7 +146,23 @@ def _process_single_vulnerability(db, bot_id, temp_dir, repo_full_name, db_repo,
     if fix_successful:
         _create_pr(db, bot_id, gh_service, repo_full_name, file_path, new_content, desc, severity, vuln_record)
 
-@shared_task
+def _clone_repo(bot_id: str, repo_full_name: str, clone_url: str, temp_dir: str, token: str) -> bool:
+    TerminalLogger.log(bot_id, "CLONING", f"Cloning {repo_full_name} for deep analysis...")
+    success = GitLocalService.clone_repository(clone_url, temp_dir, token)
+    if not success:
+        TerminalLogger.log(bot_id, "ERROR", f"Failed to clone {repo_full_name}")
+    return success
+
+def _run_scanners(bot_id: str, temp_dir: str, repo_full_name: str):
+    TerminalLogger.log(bot_id, "SCANNING", "Running high-speed static analysis (Semgrep)...")
+    vulns = SemgrepService.scan_directory(temp_dir)
+
+    if not vulns:
+        TerminalLogger.log(bot_id, "SUCCESS", f"No vulnerabilities found in {repo_full_name}")
+    else:
+        TerminalLogger.log(bot_id, "FOUND", f"Static analysis found {len(vulns)} issues.")
+    return vulns
+
 def scan_repository_task(repo_full_name: str, bot_id: str):
     """Main task to scan a repository, find vulnerabilities, and attempt to fix them."""
     db = SessionLocal()
@@ -148,9 +174,7 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
 
         TerminalLogger.log(bot_id, "INIT", f"Starting scan for {repo_full_name}")
 
-        # finder_model = get_config_val(db, "finder_model", "gpt-4o-mini")
         fixer_model = get_config_val(db, "fixer_model", "gpt-4o")
-        # scan_issues = get_config_val(db, "scan_issues", False)
 
         if not gh_service.gh:
             TerminalLogger.log(bot_id, "ERROR", "GitHub token not configured")
@@ -159,25 +183,12 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
         repo = gh_service.gh.get_repo(repo_full_name)
         db_repo = gh_service.get_or_create_repo_record(repo)
 
-        # 1. CLONE LOCALLY
-        TerminalLogger.log(bot_id, "CLONING", f"Cloning {repo_full_name} for deep analysis...")
-        success = GitLocalService.clone_repository(
-            repo.clone_url, temp_dir, str(gh_service.token)
-        )
-        if not success:
-            TerminalLogger.log(bot_id, "ERROR", f"Failed to clone {repo_full_name}")
+        if not _clone_repo(bot_id, repo_full_name, repo.clone_url, temp_dir, str(gh_service.token)):
             return
 
-        # 2. RUN SEMGREP
-        TerminalLogger.log(bot_id, "SCANNING", "Running high-speed static analysis (Semgrep)...")
-        vulns = SemgrepService.scan_directory(temp_dir)
+        vulns = _run_scanners(bot_id, temp_dir, repo_full_name)
 
-        if not vulns:
-            TerminalLogger.log(bot_id, "SUCCESS", f"No vulnerabilities found in {repo_full_name}")
-        else:
-            TerminalLogger.log(bot_id, "FOUND", f"Static analysis found {len(vulns)} issues.")
-
-        vuln_records = []
+        vuln_records: list[Vulnerability] = []
         for v in vulns:
             _process_single_vulnerability(
                 db, bot_id, temp_dir, repo_full_name, db_repo, v, ai_engine, fixer_model, gh_service
@@ -188,8 +199,12 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
         TerminalLogger.log(bot_id, "ERROR", f"Fatal error: {str(e)}")
     finally:
         # ABSOLUTELY ESSENTIAL: Clean up the local sandbox to prevent disk exhaustion
-        GitLocalService.cleanup_directory(temp_dir)
-        db.close()
+        try:
+            GitLocalService.cleanup_directory(temp_dir)
+        except Exception as e:
+            logger.error("Failed to clean up temp dir %s: %s", temp_dir, str(e))
+        finally:
+            db.close()
 
 
 @shared_task

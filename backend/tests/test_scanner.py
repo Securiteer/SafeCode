@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import MagicMock, patch
 from app.tasks.scanner import _attempt_fix
 

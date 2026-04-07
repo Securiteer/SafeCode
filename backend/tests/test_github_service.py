@@ -76,3 +76,17 @@ class TestGitHubService(unittest.TestCase):
         self.mock_db.commit.assert_called_once()
         self.mock_db.refresh.assert_called_once_with(mock_existing_repo)
         self.assertEqual(result, mock_existing_repo)
+
+    def test_search_repositories(self):
+        self.service.gh = MagicMock()
+        mock_repo = MagicMock(spec=GithubRepository)
+        mock_repo.full_name = "test/search"
+        self.service.gh.search_repositories.return_value = [mock_repo]
+
+        repos = self.service.search_repositories(theme="python", limit=1)
+        self.assertEqual(len(repos), 1)
+        self.assertEqual(repos[0].full_name, "test/search")
+
+        self.service.gh.search_repositories.assert_called_once()
+        args, kwargs = self.service.gh.search_repositories.call_args
+        self.assertIn("topic:python", kwargs['query'])

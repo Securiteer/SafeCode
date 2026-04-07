@@ -107,24 +107,49 @@ class GitHubService:
             logger.error("Error forking %s: %s", repo_full_name, str(e))
             raise
 
+    def _ensure_branch_exists(self, repo: GithubRepository, branch_name: str, base_sha: str):
+        """Creates a branch or updates it to the latest base SHA if it already exists."""
+        try:
+            repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=base_sha)
+        except GithubException as e:
+            if e.status == 422:
+                try:
+                    ref_obj = repo.get_git_ref(f"heads/{branch_name}")
+                    ref_obj.edit(sha=base_sha, force=True)
+                except GithubException:
+                    pass
+            else:
+                raise
+
+    def _commit_file(self, repo: GithubRepository, commit_data: CommitData):
+        """Commits a file to a branch, creating it if it doesn't exist."""
+        try:
+            contents = repo.get_contents(commit_data.file_path, ref=commit_data.branch_name)
+            repo.update_file(
+                contents.path,
+                commit_data.commit_message,
+                commit_data.new_content,
+                contents.sha,
+                branch=commit_data.branch_name
+            )
+        except GithubException as e:
+            if e.status == 404:
+                repo.create_file(
+                    commit_data.file_path,
+                    commit_data.commit_message,
+                    commit_data.new_content,
+                    branch=commit_data.branch_name
+                )
+            else:
+                raise
+
     def create_branch_and_commit(self, forked_repo: GithubRepository, commit_data: CommitData):
+        """Creates a branch and commits a file to it."""
         source_branch = forked_repo.default_branch
         ref = forked_repo.get_git_ref(f"heads/{source_branch}")
 
-        try:
-            forked_repo.create_git_ref(ref=f"refs/heads/{commit_data.branch_name}", sha=ref.object.sha)
-        except GithubException as e:
-            if e.status != 422:
-                raise
-
-        try:
-            contents = forked_repo.get_contents(commit_data.file_path, ref=commit_data.branch_name)
-            forked_repo.update_file(contents.path, commit_data.commit_message, commit_data.new_content, contents.sha, branch=commit_data.branch_name)
-        except GithubException as e:
-            if e.status == 404:
-                forked_repo.create_file(commit_data.file_path, commit_data.commit_message, commit_data.new_content, branch=commit_data.branch_name)
-            else:
-                raise
+        self._ensure_branch_exists(forked_repo, commit_data.branch_name, ref.object.sha)
+        self._commit_file(forked_repo, commit_data)
 
     def has_open_pull_request(self, repo_full_name: str, head_branch: str) -> bool:
         """Check if there is already an open pull request from the given head branch."""
@@ -153,6 +178,12 @@ class GitHubService:
         try:
             pr = repo.create_pull(title=params.title, body=params.body, head=head, base=base)
             return pr.html_url
+        except GithubException as e:
+            if e.status == 422:
+                logger.info(f"PR exists/validation failed for {head}: {str(e)}")
+                return ""
+            logger.error(f"Error creating PR for {params.original_repo_full_name}: {str(e)}")
+            raise
         except Exception as e:
             logger.error(f"Error creating PR for {params.original_repo_full_name}: {str(e)}")
             raise

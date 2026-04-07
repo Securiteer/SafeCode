@@ -9,7 +9,7 @@ from typing import Dict, Any
 
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 import redis.asyncio as aioredis
 from pydantic import BaseModel
@@ -30,14 +30,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 @app.get("/api/stats")
 def get_dashboard_stats(db: Session = Depends(get_db)):
     """Returns dashboard statistics."""
     total_repos = db.query(Repository).count()
+
+    # We could optimize this by doing a single query with sum(case...) but this is okay for now
     total_vulns = db.query(Vulnerability).count()
     fixed_vulns = db.query(Vulnerability).filter(
         Vulnerability.status == "fixed").count()
@@ -46,7 +48,7 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     severity_counts = db.query(
         Vulnerability.severity, func.count(Vulnerability.id)  # pylint: disable=not-callable
     ).group_by(Vulnerability.severity).all()
-    severity_dict = {sev: count for sev, count in severity_counts}
+    severity_dict = dict(severity_counts)
 
     cost_usd = db.query(func.sum(ModelStat.cost_usd)).scalar() or 0.0
 
@@ -99,21 +101,26 @@ def get_config(db: Session = Depends(get_db)):
 
 class ConfigUpdate(BaseModel):
     """Payload model for config updates."""
-    configs: Dict[str, Any]
+    configs: Dict[str, str | int | float | bool | list | dict]
 
 
 @app.post("/api/config")
 def update_config(payload: ConfigUpdate, db: Session = Depends(get_db)):
     keys = list(payload.configs.keys())
     existing_configs = db.query(BotConfig).filter(BotConfig.key.in_(keys)).all()
-    config_dict = {c.key: c for c in existing_configs}
+    config_dict: Dict[str, BotConfig] = {c.key: c for c in existing_configs}
 
+    updates = []
     for k, v in payload.configs.items():
         if k in config_dict:
-            config_dict[k].value = v
+            updates.append({"id": config_dict[k].id, "value": v})
         else:
             conf = BotConfig(key=k, value=v)
             db.add(conf)
+
+    if updates:
+        db.bulk_update_mappings(BotConfig, updates)
+
     db.commit()
     return {"status": "success"}
 
@@ -139,7 +146,7 @@ async def websocket_terminal(websocket: WebSocket):
                 await websocket.send_text(message["data"])
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
-        pass
+        print("WebSocket client disconnected")
     finally:
         await pubsub.unsubscribe("terminal_logs")
         await pubsub.close()
@@ -158,10 +165,11 @@ def get_terminal_log_details(log_id: int, db: Session = Depends(get_db)):
         "action": log.action
     }
 
+
 @app.get("/api/leaderboard")
 def get_leaderboard(db: Session = Depends(get_db)):
     """Returns top repositories with fixed vulnerabilities."""
-    repos = db.query(Repository).join(
+    repos = db.query(Repository).options(joinedload(Repository.vulnerabilities)).join(
         Vulnerability, Repository.id == Vulnerability.repo_id
     ).filter(
         Vulnerability.status == "fixed"
