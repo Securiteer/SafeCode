@@ -1,2 +1,3 @@
 backend/venv
-venv/
+ai_sec.db
+__pycache__/
