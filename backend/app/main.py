@@ -1,0 +1,151 @@
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from typing import List, Dict, Any
+import json
+import asyncio
+import redis.asyncio as aioredis
+from datetime import datetime, timedelta
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from app.core.database import get_db, Base, engine
+from app.core.config import settings
+from app.models.models import Vulnerability, Repository, ModelStat, BotConfig, IssueFix
+
+app = FastAPI(title="AI Security Bot API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/api/stats")
+def get_dashboard_stats(db: Session = Depends(get_db)):
+    total_repos = db.query(Repository).count()
+    total_vulns = db.query(Vulnerability).count()
+    fixed_vulns = db.query(Vulnerability).filter(Vulnerability.status == "fixed").count()
+    fixed_issues = db.query(IssueFix).filter(IssueFix.status == "fixed").count()
+
+    severity_counts = db.query(Vulnerability.severity, func.count(Vulnerability.id)).group_by(Vulnerability.severity).all()
+    severity_dict = {sev: count for sev, count in severity_counts}
+
+    cost_usd = db.query(func.sum(ModelStat.cost_usd)).scalar() or 0.0
+
+    return {
+        "total_repos_scanned": total_repos,
+        "total_vulnerabilities_found": total_vulns,
+        "vulnerabilities_fixed": fixed_vulns,
+        "issues_fixed": fixed_issues,
+        "severity_breakdown": severity_dict,
+        "total_cost_usd": round(cost_usd, 4)
+    }
+
+@app.get("/api/models")
+def get_model_stats(db: Session = Depends(get_db)):
+    stats = db.query(
+        ModelStat.model_name,
+        func.count(ModelStat.id).label("requests"),
+        func.sum(ModelStat.tokens_used).label("total_tokens"),
+        func.sum(ModelStat.cost_usd).label("total_cost")
+    ).group_by(ModelStat.model_name).all()
+
+    return [
+        {"model": s.model_name, "requests": s.requests, "tokens": s.total_tokens, "cost": round(s.total_cost, 4)}
+        for s in stats
+    ]
+
+@app.get("/api/repositories")
+def list_repositories(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+    repos = db.query(Repository).order_by(Repository.last_scanned_at.desc()).offset(skip).limit(limit).all()
+    return repos
+
+@app.get("/api/config")
+def get_config(db: Session = Depends(get_db)):
+    configs = db.query(BotConfig).all()
+    return {c.key: c.value for c in configs}
+
+from pydantic import BaseModel
+class ConfigUpdate(BaseModel):
+    configs: Dict[str, Any]
+
+@app.post("/api/config")
+def update_config(payload: ConfigUpdate, db: Session = Depends(get_db)):
+    for k, v in payload.configs.items():
+        conf = db.query(BotConfig).filter(BotConfig.key == k).first()
+        if conf:
+            conf.value = v
+        else:
+            conf = BotConfig(key=k, value=v)
+            db.add(conf)
+    db.commit()
+    return {"status": "success"}
+
+@app.websocket("/ws/terminal")
+async def websocket_terminal(websocket: WebSocket):
+    await websocket.accept()
+    redis_conn = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    pubsub = redis_conn.pubsub()
+    await pubsub.subscribe("terminal_logs")
+
+    try:
+        history = await redis_conn.lrange("terminal_logs_history", 0, 50)
+        for msg in reversed(history):
+            await websocket.send_text(msg)
+
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message:
+                await websocket.send_text(message["data"])
+            await asyncio.sleep(0.1)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await pubsub.unsubscribe("terminal_logs")
+        await pubsub.close()
+        await redis_conn.close()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+
+from app.models.models import TerminalLog
+@app.get("/api/terminal/{log_id}")
+def get_terminal_log_details(log_id: int, db: Session = Depends(get_db)):
+    log = db.query(TerminalLog).filter(TerminalLog.id == log_id).first()
+    if not log:
+        return {"error": "Not found"}
+    return {
+        "prompt": log.prompt_used,
+        "response": log.ai_response,
+        "details": log.details,
+        "action": log.action
+    }
+
+@app.get("/api/leaderboard")
+def get_leaderboard(db: Session = Depends(get_db)):
+    repos = db.query(Repository).join(Vulnerability, Repository.id == Vulnerability.repo_id)\
+        .filter(Vulnerability.status == "fixed")\
+        .group_by(Repository.id)\
+        .order_by(func.count(Vulnerability.id).desc()).limit(10).all()
+
+    return [{"repo": r.full_name, "fixes": len([v for v in r.vulnerabilities if v.status == "fixed"]), "quality": r.code_quality_percent} for r in repos]
+
+@app.get("/api/charts")
+def get_charts_data(db: Session = Depends(get_db)):
+    import datetime
+    end_date = datetime.datetime.now()
+    start_date = end_date - datetime.timedelta(days=7)
+
+    # Very simple group by date
+    vulns = db.query(func.date(Vulnerability.created_at), func.count(Vulnerability.id))\
+        .filter(Vulnerability.created_at >= start_date)\
+        .group_by(func.date(Vulnerability.created_at)).all()
+
+    return [{"date": str(date), "count": count} for date, count in vulns]
