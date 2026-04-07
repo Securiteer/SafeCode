@@ -3,8 +3,17 @@ Service for interacting with the GitHub API.
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List, Any
+from dataclasses import dataclass
 from github import Github, GithubException
+
+
+@dataclass
+class PullRequestParams:
+    original_repo_full_name: str
+    fork_owner: str
+    branch_name: str
+    title: str
+    body: str
 from github.Repository import Repository as GithubRepository
 from sqlalchemy.orm import Session
 from app.models.models import Repository, BotConfig
@@ -121,28 +130,19 @@ class GitHubService:
             else:
                 raise
 
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
-    def create_pull_request(
-        self,
-        original_repo_full_name: str,
-        fork_owner: str,
-        branch_name: str,
-        title: str,
-        body: str
-    ) -> str:
-        """Create a pull request on the original repository."""
+    def create_pull_request(self, params: PullRequestParams) -> str:
         if not self.gh:
             raise ValueError("GitHub token not configured.")
 
-        repo = self.gh.get_repo(original_repo_full_name)
-        head = f"{fork_owner}:{branch_name}"
+        repo = self.gh.get_repo(params.original_repo_full_name)
+        head = f"{params.fork_owner}:{params.branch_name}"
         base = repo.default_branch
 
         try:
-            pr = repo.create_pull(title=title, body=body, head=head, base=base)
-            return str(pr.html_url)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error("Error creating PR for %s: %s", original_repo_full_name, str(e))
+            pr = repo.create_pull(title=params.title, body=params.body, head=head, base=base)
+            return pr.html_url
+        except Exception as e:
+            logger.error(f"Error creating PR for {params.original_repo_full_name}: {str(e)}")
             raise
 
     def get_open_issues(self, repo_full_name: str, limit: int = 5) -> List[Any]:

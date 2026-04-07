@@ -6,7 +6,7 @@ import random
 import string
 from celery import shared_task  # type: ignore
 from app.core.database import SessionLocal
-from app.services.github_service import GitHubService
+from app.services.github_service import GitHubService, PullRequestParams
 from app.services.ai_engine import AIEngine
 from app.services.terminal_logger import TerminalLogger
 from app.services.semgrep_service import SemgrepService
@@ -152,18 +152,19 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
                         forked_repo, branch_name, file_path, new_content,
                         f"Security Fix: {desc[:50]}"
                     )
-                    pr_url = gh_service.create_pull_request(
-                        repo_full_name,
-                        forked_repo.owner.login,
-                        branch_name,
+                    pr_params = PullRequestParams(
+                        original_repo_full_name=repo_full_name,
+                        fork_owner=forked_repo.owner.login,
+                        branch_name=branch_name,
                         title=f"Security Fix: Automated resolution of {severity} vulnerability",
                         body=(
                             f"This PR was generated automatically by AI Security Bot.\n\n"
                             f"**Issue:** {desc}\n\n**Severity:** {severity.upper()}"
                         )
                     )
-                    setattr(vuln_record, "status", VulnerabilityStatus.FIXED)
-                    setattr(vuln_record, "pr_url", str(pr_url))
+                    pr_url = gh_service.create_pull_request(pr_params)
+                    vuln_record.status = VulnerabilityStatus.FIXED
+                    vuln_record.pr_url = pr_url
                     db.commit()
                     TerminalLogger.log(bot_id, "SUCCESS", f"Created PR: {pr_url}")
                 except Exception as e:
