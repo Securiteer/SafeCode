@@ -1,20 +1,23 @@
+"""
+Celery tasks for scanning and dispatching bots.
+"""
 import logging
 import random
 import string
-import os
-import shutil
-from celery import shared_task
+from celery import shared_task  # type: ignore
 from app.core.database import SessionLocal
-from app.services.github_service import GitHubService
+from app.services.github_service import GitHubService, CommitData
 from app.services.ai_engine import AIEngine
-from app.services.terminal_logger import TerminalLogger
+from app.services.terminal_logger import TerminalLogger, LogExtra
 from app.services.semgrep_service import SemgrepService
 from app.services.git_local_service import GitLocalService
-from app.models.models import BotConfig, Vulnerability, VulnerabilityStatus, Repository, IssueFix
+from app.models.models import BotConfig, Vulnerability, VulnerabilityStatus
 
 logger = logging.getLogger(__name__)
 
+
 def get_config_val(db, key, default):
+    """Fetches a configuration value from the database."""
     conf = db.query(BotConfig).filter(BotConfig.key == key).first()
     return conf.value if conf else default
 
@@ -112,8 +115,9 @@ def _process_single_vulnerability(db, bot_id, temp_dir, repo_full_name, db_repo,
 
 @shared_task
 def scan_repository_task(repo_full_name: str, bot_id: str):
+    """Main task to scan a repository, find vulnerabilities, and attempt to fix them."""
     db = SessionLocal()
-    temp_dir = f"/tmp/swarm_repos/{repo_full_name.replace('/', '_')}_{random.randint(1000,9999)}"
+    temp_dir = f"/tmp/swarm_repos/{repo_full_name.replace('/', '_')}_{random.randint(1000, 9999)}"
 
     try:
         gh_service = GitHubService(db)
@@ -121,9 +125,9 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
 
         TerminalLogger.log(bot_id, "INIT", f"Starting scan for {repo_full_name}")
 
-        finder_model = get_config_val(db, "finder_model", "gpt-4o-mini")
+        # finder_model = get_config_val(db, "finder_model", "gpt-4o-mini")
         fixer_model = get_config_val(db, "fixer_model", "gpt-4o")
-        scan_issues = get_config_val(db, "scan_issues", False)
+        # scan_issues = get_config_val(db, "scan_issues", False)
 
         if not gh_service.gh:
             TerminalLogger.log(bot_id, "ERROR", "GitHub token not configured")
@@ -134,7 +138,9 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
 
         # 1. CLONE LOCALLY
         TerminalLogger.log(bot_id, "CLONING", f"Cloning {repo_full_name} for deep analysis...")
-        success = GitLocalService.clone_repository(repo.clone_url, temp_dir, gh_service.token)
+        success = GitLocalService.clone_repository(
+            repo.clone_url, temp_dir, str(gh_service.token)
+        )
         if not success:
             TerminalLogger.log(bot_id, "ERROR", f"Failed to clone {repo_full_name}")
             return
@@ -148,35 +154,41 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
         else:
             TerminalLogger.log(bot_id, "FOUND", f"Static analysis found {len(vulns)} issues.")
 
+        vuln_records = []
         for v in vulns:
             _process_single_vulnerability(
                 db, bot_id, temp_dir, repo_full_name, db_repo, v, ai_engine, fixer_model, gh_service
             )
 
     except Exception as e:
-        logger.error(f"Error in scan_repository_task: {e}")
+        logger.error("Error in scan_repository_task: %s", str(e))
         TerminalLogger.log(bot_id, "ERROR", f"Fatal error: {str(e)}")
     finally:
         # ABSOLUTELY ESSENTIAL: Clean up the local sandbox to prevent disk exhaustion
         GitLocalService.cleanup_directory(temp_dir)
         db.close()
 
+
 @shared_task
 def discover_and_dispatch():
+    """Discover new repositories and dispatch scanner tasks."""
     db = SessionLocal()
     try:
         is_active = get_config_val(db, "is_active", True)
-        if not is_active: return
+        if not is_active:
+            return
 
         max_agents = int(get_config_val(db, "max_agents", 4))
         target_theme = get_config_val(db, "target_theme", None)
         max_age = int(get_config_val(db, "max_repo_age_days", 30))
 
         gh_service = GitHubService(db)
-        repos = gh_service.search_repositories(theme=target_theme, max_age_days=max_age, limit=max_agents)
+        repos = gh_service.search_repositories(
+            theme=target_theme, max_age_days=max_age, limit=max_agents
+        )
 
         for i, repo in enumerate(repos):
-            bot_id = f"BOT-{i+1}-{random.choice(string.ascii_uppercase)}{random.randint(10,99)}"
+            bot_id = f"BOT-{i+1}-{random.choice(string.ascii_uppercase)}{random.randint(10, 99)}"
             scan_repository_task.delay(repo.full_name, bot_id)
 
     finally:
