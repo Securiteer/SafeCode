@@ -1,4 +1,7 @@
-from celery import Celery
+"""
+Celery application setup.
+"""
+from celery import Celery  # type: ignore
 from app.core.config import settings
 
 celery_app = Celery(
