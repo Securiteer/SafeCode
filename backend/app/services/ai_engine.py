@@ -35,9 +35,6 @@ class AIEngine:
             else:
                 self.api_keys[provider] = []
 
-            if self.api_keys[provider]:
-                os.environ[env_var] = self.api_keys[provider][0]
-
         local_url_conf = self.db.query(BotConfig).filter(BotConfig.key == "local_base_url").first()
         self.local_base_url = local_url_conf.value if local_url_conf else None
 
