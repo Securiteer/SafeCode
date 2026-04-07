@@ -26,8 +26,12 @@ class AIEngine:
             ("vertexai", "vertexai_api_keys", "VERTEXAI_API_KEY")
         ]
 
+        db_keys = [p[1] for p in providers] + ["local_base_url"]
+        configs = self.db.query(BotConfig).filter(BotConfig.key.in_(db_keys)).all()
+        config_map = {conf.key: conf for conf in configs}
+
         for provider, db_key, env_var in providers:
-            conf = self.db.query(BotConfig).filter(BotConfig.key == db_key).first()
+            conf = config_map.get(db_key)
             if conf and conf.value and isinstance(conf.value, list):
                 self.api_keys[provider] = conf.value
             elif conf and conf.value and isinstance(conf.value, str):
@@ -38,7 +42,7 @@ class AIEngine:
             if self.api_keys[provider]:
                 os.environ[env_var] = self.api_keys[provider][0]
 
-        local_url_conf = self.db.query(BotConfig).filter(BotConfig.key == "local_base_url").first()
+        local_url_conf = config_map.get("local_base_url")
         self.local_base_url = local_url_conf.value if local_url_conf else None
 
     def _get_provider_from_model(self, model: str) -> str:
