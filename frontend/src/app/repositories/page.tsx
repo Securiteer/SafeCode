@@ -1,18 +1,31 @@
+"use client";
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Database, Shield, LayoutGrid } from 'lucide-react';
+import { Database, Search, ArrowRight, Github, Terminal, CheckCircle2, XCircle, LayoutGrid } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
+interface RepoData {
+  id: number;
+  full_name: string;
+  stars: number;
+  code_quality_percent: number | null;
+  themes: string[];
+  last_scanned_at: string | null;
+  created_at: string;
+}
 
-export default async function Repositories() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000';
-  let repos = [];
+export default function Repositories() {
+  const [repos, setRepos] = useState<RepoData[]>([]);
 
-  try {
-    const res = await fetch(`${apiUrl}/api/repositories?limit=100`, { cache: 'no-store' });
-    if (res.ok) repos = await res.json();
-  } catch (e) {
-    console.error("Failed to fetch repositories", e);
-  }
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    fetch(`${apiUrl}/api/repositories?limit=100`)
+      .then(res => res.json())
+      .then(setRepos)
+      .catch(console.error);
+  }, []);
+
+  const [search, setSearch] = useState('');
+  const filteredRepos = repos.filter((r: RepoData) => r.full_name?.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <main className="min-h-screen text-white p-4 md:p-8">
@@ -32,6 +45,17 @@ export default async function Repositories() {
           </nav>
         </header>
 
+        <div className="relative max-w-xl">
+          <Search className="absolute left-4 top-3.5 w-5 h-5 text-purple-500" />
+          <input
+            type="text"
+            placeholder="Search repositories by name..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full bg-black/40 border border-purple-900/50 rounded-xl py-3 pl-12 pr-4 text-white focus:ring-fuchsia-500 focus:border-fuchsia-500 transition shadow-inner font-mono text-sm"
+          />
+        </div>
+
         <div className="glass-panel rounded-2xl overflow-hidden shadow-2xl">
           <table className="w-full text-left">
             <thead className="bg-purple-950/40 border-b border-purple-900/50">
@@ -44,7 +68,7 @@ export default async function Repositories() {
               </tr>
             </thead>
             <tbody className="divide-y divide-purple-900/30">
-              {repos.map((repo: any) => (
+              {filteredRepos.map((repo: RepoData) => (
                 <tr key={repo.id} className="hover:bg-purple-900/20 transition-colors">
                   <td className="p-5 font-medium">
                     <a href={`https://github.com/${repo.full_name}`} target="_blank" rel="noreferrer" className="text-fuchsia-300 hover:text-fuchsia-100 hover:underline">
@@ -53,7 +77,7 @@ export default async function Repositories() {
                   </td>
                   <td className="p-5 text-gray-300 flex items-center gap-2 font-mono">
                     <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
-                    {repo.stars.toLocaleString()}
+                    {repo.stars?.toLocaleString() || 0}
                   </td>
                   <td className="p-5">
                     {repo.code_quality_percent !== null ? (

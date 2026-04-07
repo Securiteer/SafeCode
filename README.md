@@ -27,7 +27,7 @@ Welcome to **AI Security Swarm**! A fully autonomous, multi-agent AI system desi
 ## 🛠 Tech Stack
 
 - **Backend:** FastAPI, Python, SQLAlchemy, PostgreSQL, Redis, Celery (for 24/7 background tasks)
-- **Frontend:** Next.js (App Router), React, Tailwind CSS, Recharts, Lucide Icons
+- **Frontend:** Next.js 15 (App Router), React 19, Tailwind CSS v4, Framer Motion, Recharts, Lucide Icons
 - **AI Routing:** LiteLLM (Supports 100+ Models natively)
 - **Static Analysis:** Semgrep
 
