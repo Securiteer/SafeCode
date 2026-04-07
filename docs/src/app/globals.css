@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: #08080d;
+  --bg-surface: #111118;
+  --bg-elevated: #191922;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --accent: #8b5cf6;
+}
+
+body {
+  background: var(--bg-base);
+  color: #e4e4e7;
+  min-height: 100vh;
+}
+
+a { color: #a78bfa; text-decoration: none; }
+a:hover { color: #c4b5fd; text-decoration: underline; }
+
+code {
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+pre {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 20px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.7;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+h1, h2, h3 { color: #fafafa; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.25); border-radius: 8px; }
+
+html { scroll-behavior: smooth; }
