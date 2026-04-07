@@ -5,7 +5,7 @@ import os
 import shutil
 from celery import shared_task
 from app.core.database import SessionLocal
-from app.services.github_service import GitHubService
+from app.services.github_service import GitHubService, CommitData
 from app.services.ai_engine import AIEngine
 from app.services.terminal_logger import TerminalLogger
 from app.services.semgrep_service import SemgrepService
@@ -121,10 +121,13 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
                 try:
                     forked_repo = gh_service.fork_repository(repo_full_name)
                     branch_name = f"ai-sec-fix-{random.randint(1000,9999)}"
-                    gh_service.create_branch_and_commit(
-                        forked_repo, branch_name, file_path, new_content,
-                        f"Security Fix: {desc[:50]}"
+                    commit_data = CommitData(
+                        branch_name=branch_name,
+                        file_path=file_path,
+                        new_content=new_content,
+                        commit_message=f"Security Fix: {desc[:50]}"
                     )
+                    gh_service.create_branch_and_commit(forked_repo, commit_data)
                     pr_url = gh_service.create_pull_request(
                         repo_full_name, forked_repo.owner.login, branch_name,
                         title=f"Security Fix: Automated resolution of {severity} vulnerability",
