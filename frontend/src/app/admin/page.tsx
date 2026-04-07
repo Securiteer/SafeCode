@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Settings,
   Shield,
   Plus,
   X,
@@ -94,6 +93,33 @@ const modelRoles: { id: ModelRole; label: string; desc: string; icon: typeof Sea
   { id: "verifier_model", label: "Verifier", desc: "Validates findings", icon: Shield },
   { id: "fixer_model", label: "Fixer", desc: "Generates patches", icon: Zap },
 ];
+
+/* ─── Toggle Helper Component ─── */
+function Toggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0",
+        checked ? "bg-violet-600" : "bg-zinc-700"
+      )}
+    >
+      <span
+        className={cn(
+          "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+          checked && "translate-x-5"
+        )}
+      />
+    </button>
+  );
+}
 
 /* ═══════════════════════════════════════
    Admin Settings Page
@@ -214,31 +240,6 @@ export default function Admin() {
       m.name.toLowerCase().includes(searchModel.toLowerCase()) ||
       m.provider.toLowerCase().includes(searchModel.toLowerCase()) ||
       m.id.toLowerCase().includes(searchModel.toLowerCase())
-  );
-
-  /* ─── Toggle Helper ─── */
-  const Toggle = ({
-    checked,
-    onChange,
-  }: {
-    checked: boolean;
-    onChange: (v: boolean) => void;
-  }) => (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0",
-        checked ? "bg-violet-600" : "bg-zinc-700"
-      )}
-    >
-      <span
-        className={cn(
-          "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200",
-          checked && "translate-x-5"
-        )}
-      />
-    </button>
   );
 
   return (
