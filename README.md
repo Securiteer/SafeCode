@@ -42,7 +42,7 @@ You can run the AI Security Swarm either fully containerized via **Docker** (Rec
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/Securiteer/SafeCode.git
-   cd Security
+   cd SafeCode
    ```
 
 2. **Run the Application:**
@@ -63,7 +63,7 @@ You can run the AI Security Swarm either fully containerized via **Docker** (Rec
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/Securiteer/SafeCode.git
-   cd Security
+   cd SafeCode
    ```
 
 2. **Use the Helper Script (Fastest):**
@@ -81,7 +81,7 @@ You can run the AI Security Swarm either fully containerized via **Docker** (Rec
    Open PowerShell or Git Bash:
    ```powershell
    git clone https://github.com/Securiteer/SafeCode.git
-   cd Security
+   cd SafeCode
    ```
 
 2. **Setup Backend (FastAPI & Celery):**
