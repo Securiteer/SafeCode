@@ -12,6 +12,11 @@ class GitLocalService:
         """
         Clones a repository securely using the provided token to a local directory.
         """
+        def redact(text: str) -> str:
+            if not token:
+                return text
+            return text.replace(token, "********")
+
         try:
             # Construct URL with token
             url = repo_url.replace("https://", f"https://{token}@")
@@ -19,11 +24,13 @@ class GitLocalService:
 
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
-                logger.error(f"Git clone failed: {result.stderr}")
+                redacted_stderr = redact(result.stderr)
+                logger.error(f"Git clone failed: {redacted_stderr}")
                 return False
             return True
         except Exception as e:
-            logger.error(f"Exception during clone: {e}")
+            redacted_error = redact(str(e))
+            logger.error(f"Exception during clone: {redacted_error}")
             return False
 
     @staticmethod
