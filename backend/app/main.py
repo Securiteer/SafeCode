@@ -130,12 +130,12 @@ def get_terminal_log_details(log_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/leaderboard")
 def get_leaderboard(db: Session = Depends(get_db)):
-    repos = db.query(Repository).join(Vulnerability, Repository.id == Vulnerability.repo_id)\
+    results = db.query(Repository, func.count(Vulnerability.id).label('fixes_count')).join(Vulnerability, Repository.id == Vulnerability.repo_id)\
         .filter(Vulnerability.status == "fixed")\
         .group_by(Repository.id)\
         .order_by(func.count(Vulnerability.id).desc()).limit(10).all()
 
-    return [{"repo": r.full_name, "fixes": len([v for v in r.vulnerabilities if v.status == "fixed"]), "quality": r.code_quality_percent} for r in repos]
+    return [{"repo": r.full_name, "fixes": count, "quality": r.code_quality_percent} for r, count in results]
 
 @app.get("/api/charts")
 def get_charts_data(db: Session = Depends(get_db)):
