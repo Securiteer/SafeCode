@@ -1,29 +1,39 @@
+"""
+Service for local git operations and sandbox testing.
+"""
 import subprocess
 import logging
 import os
 import shutil
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
 class GitLocalService:
+    """Handles git operations and running tests locally."""
+
     @staticmethod
     def clone_repository(repo_url: str, dest_dir: str, token: str) -> bool:
         """
         Clones a repository securely using the provided token to a local directory.
         """
+        def redact(text: str) -> str:
+            if not token:
+                return text
+            return text.replace(token, "********")
+
         try:
             # Construct URL with token
             url = repo_url.replace("https://", f"https://{token}@")
             cmd = ["git", "clone", "--depth", "1", url, dest_dir]
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if result.returncode != 0:
-                logger.error(f"Git clone failed: {result.stderr}")
+                logger.error("Git clone failed: %s", result.stderr)
                 return False
             return True
-        except Exception as e:
-            logger.error(f"Exception during clone: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Exception during clone: %s", str(e))
             return False
 
     @staticmethod
@@ -34,9 +44,9 @@ class GitLocalService:
         try:
             if os.path.exists(directory_path):
                 shutil.rmtree(directory_path)
-                logger.info(f"Cleaned up {directory_path}")
-        except Exception as e:
-            logger.error(f"Failed to cleanup {directory_path}: {e}")
+                logger.info("Cleaned up %s", directory_path)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Failed to cleanup %s: %s", directory_path, str(e))
 
     @staticmethod
     def run_sandbox_test(directory_path: str) -> tuple[bool, str]:
@@ -48,22 +58,25 @@ class GitLocalService:
             # Determine if JS or Python
             if os.path.exists(os.path.join(directory_path, "package.json")):
                 cmd = ["npm", "test"]
-            elif os.path.exists(os.path.join(directory_path, "pytest.ini")) or os.path.exists(os.path.join(directory_path, "tests")):
+            elif os.path.exists(os.path.join(directory_path, "pytest.ini")) or os.path.exists(
+                os.path.join(directory_path, "tests")
+            ):
                 cmd = ["pytest"]
             else:
                 return True, "No test framework detected. Assuming success."
 
-            logger.info(f"Running sandbox test: {' '.join(cmd)} in {directory_path}")
-            result = subprocess.run(cmd, cwd=directory_path, capture_output=True, text=True, timeout=60)
+            logger.info("Running sandbox test: %s in %s", ' '.join(cmd), directory_path)
+            result = subprocess.run(
+                cmd, cwd=directory_path, capture_output=True, text=True, timeout=60, check=False
+            )
 
             if result.returncode == 0:
                 return True, result.stdout
-            else:
-                return False, result.stderr or result.stdout
+            return False, result.stderr or result.stdout
 
         except subprocess.TimeoutExpired:
             return False, "Tests timed out after 60 seconds."
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             return False, str(e)
 
     @staticmethod
