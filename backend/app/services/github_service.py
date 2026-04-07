@@ -2,6 +2,7 @@
 Service for interacting with the GitHub API.
 """
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from github import Github, GithubException
@@ -21,6 +22,12 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class CommitData:
+    branch_name: str
+    file_path: str
+    new_content: str
+    commit_message: str
 
 class GitHubService:
     """Service to handle interactions with GitHub."""
@@ -100,33 +107,22 @@ class GitHubService:
             logger.error("Error forking %s: %s", repo_full_name, str(e))
             raise
 
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
-    def create_branch_and_commit(
-        self,
-        forked_repo: GithubRepository,
-        branch_name: str,
-        file_path: str,
-        new_content: str,
-        commit_message: str
-    ):
-        """Create a new branch and commit a file change."""
+    def create_branch_and_commit(self, forked_repo: GithubRepository, commit_data: CommitData):
         source_branch = forked_repo.default_branch
         ref = forked_repo.get_git_ref(f"heads/{source_branch}")
 
         try:
-            forked_repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=ref.object.sha)
+            forked_repo.create_git_ref(ref=f"refs/heads/{commit_data.branch_name}", sha=ref.object.sha)
         except GithubException as e:
             if e.status != 422:
                 raise
 
         try:
-            contents: Any = forked_repo.get_contents(file_path, ref=branch_name)
-            forked_repo.update_file(
-                contents.path, commit_message, new_content, contents.sha, branch=branch_name
-            )
+            contents = forked_repo.get_contents(commit_data.file_path, ref=commit_data.branch_name)
+            forked_repo.update_file(contents.path, commit_data.commit_message, commit_data.new_content, contents.sha, branch=commit_data.branch_name)
         except GithubException as e:
             if e.status == 404:
-                forked_repo.create_file(file_path, commit_message, new_content, branch=branch_name)
+                forked_repo.create_file(commit_data.file_path, commit_data.commit_message, commit_data.new_content, branch=commit_data.branch_name)
             else:
                 raise
 
