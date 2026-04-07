@@ -1,9 +1,12 @@
-import litellm
+"""
+Service for interacting with AI models via LiteLLM.
+"""
 import json
 import os
 import random
 import logging
 from typing import Optional, Dict, Any, List
+import litellm  # type: ignore
 from sqlalchemy.orm import Session
 from app.models.models import ModelStat, BotConfig
 
@@ -11,7 +14,10 @@ logger = logging.getLogger(__name__)
 
 litellm.suppress_debug_info = True
 
+
 class AIEngine:
+    """Handles interactions with Language Models."""
+
     def __init__(self, db: Session):
         self.db = db
         self.api_keys: Dict[str, List[str]] = {}
@@ -38,38 +44,43 @@ class AIEngine:
             if self.api_keys[provider]:
                 os.environ[env_var] = self.api_keys[provider][0]
 
-        local_url_conf = self.db.query(BotConfig).filter(BotConfig.key == "local_base_url").first()
+        local_url_conf = self.db.query(BotConfig).filter(
+            BotConfig.key == "local_base_url"
+        ).first()
         self.local_base_url = local_url_conf.value if local_url_conf else None
 
+    # pylint: disable=too-many-return-statements
     def _get_provider_from_model(self, model: str) -> str:
         if "gpt-" in model or "o1" in model or "o3" in model:
             return "openai"
-        elif "claude-" in model:
+        if "claude-" in model:
             return "anthropic"
-        elif "gemini" in model:
+        if "gemini" in model:
             return "gemini"
-        elif "groq" in model:
+        if "groq" in model:
             return "groq"
-        elif "vertex_ai" in model:
+        if "vertex_ai" in model:
             return "vertexai"
-        elif "ollama" in model or "local" in model:
+        if "ollama" in model or "local" in model:
             return "local"
         if "/" in model:
             return model.split("/")[0]
         return "unknown"
 
-    def _track_cost(self, response, task_type: str, provider: str, actual_model: str):
+    def _track_cost(
+        self, response: Any, task_type: str, provider: str, actual_model: str
+    ) -> Dict[str, Any]:
         try:
             model = response.get("model", actual_model)
             usage = response.get("usage", {})
             tokens = usage.get("total_tokens", 0)
 
             try:
-                cost = litellm.completion_cost(completion_response=response)
-            except Exception:
+                cost = float(litellm.completion_cost(completion_response=response))
+            except Exception:  # pylint: disable=broad-exception-caught
                 cost = 0.0
 
-            stat = ModelStat(
+            stat = ModelStat(  # type: ignore
                 model_name=model,
                 provider=provider,
                 task_type=task_type,
@@ -80,21 +91,35 @@ class AIEngine:
             self.db.commit()
 
             return {"model": model, "cost": cost, "tokens": tokens, "provider": provider}
-        except Exception as e:
-            logger.error(f"Failed to track cost: {e}")
-            return {"model": actual_model, "cost": 0.0, "tokens": 0, "provider": provider}
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Failed to track cost: %s", str(e))
+            return {
+                "model": actual_model,
+                "cost": 0.0,
+                "tokens": 0,
+                "provider": provider
+            }
 
-    def _call_llm_with_fallback(self, model: str, messages: list, response_format: dict = None, task_type: str = "generic") -> dict:
+    # pylint: disable=too-many-locals,too-many-branches
+    def _call_llm_with_fallback(
+        self,
+        model: str,
+        messages: List[Dict[str, Any]],
+        response_format: Optional[Dict[str, Any]] = None,
+        task_type: str = "generic"
+    ) -> Dict[str, Any]:
         original_provider = self._get_provider_from_model(model)
 
-        fallback_conf = self.db.query(BotConfig).filter(BotConfig.key == "auto_fallback_random").first()
+        fallback_conf = self.db.query(BotConfig).filter(
+            BotConfig.key == "auto_fallback_random"
+        ).first()
         auto_fallback_random = fallback_conf.value if fallback_conf else False
 
-        keys_to_try = self.api_keys.get(original_provider, [None])
+        keys_to_try: List[Any] = self.api_keys.get(original_provider, [None])
         if not keys_to_try:
             keys_to_try = [None]
 
-        kwargs = {
+        kwargs: Dict[str, Any] = {
             "model": model,
             "messages": messages,
         }
@@ -118,21 +143,22 @@ class AIEngine:
                     "prompt_used": json.dumps(messages, indent=2),
                     "ai_response": response.choices[0].message.content
                 }
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 err_str = str(e).lower()
-                logger.warning(f"Failed with key on model {model}: {e}")
+                logger.warning("Failed with key on model %s: %s", model, str(e))
                 if "rate limit" not in err_str and "quota" not in err_str and "429" not in err_str:
                     break
 
         if auto_fallback_random:
-            logger.warning(f"Falling back from {model} to random provider.")
+            logger.warning("Falling back from %s to random provider.", model)
             fallbacks = ["gpt-4o-mini", "claude-3-haiku-20240307", "gemini/gemini-1.5-flash"]
             random.shuffle(fallbacks)
 
             for fallback_model in fallbacks:
                 fallback_provider = self._get_provider_from_model(fallback_model)
                 fallback_keys = self.api_keys.get(fallback_provider, [None])
-                if not fallback_keys: fallback_keys = [None]
+                if not fallback_keys:
+                    fallback_keys = [None]
 
                 kwargs["model"] = fallback_model
                 if "api_base" in kwargs:
@@ -146,19 +172,22 @@ class AIEngine:
                             del kwargs["api_key"]
 
                         response = litellm.completion(**kwargs)
-                        stats = self._track_cost(response, task_type, fallback_provider, fallback_model)
+                        stats = self._track_cost(
+                            response, task_type, fallback_provider, fallback_model
+                        )
                         return {
                             "content": response.choices[0].message.content,
                             "stats": stats,
                             "prompt_used": json.dumps(messages, indent=2),
                             "ai_response": response.choices[0].message.content
                         }
-                    except Exception as e:
+                    except Exception:  # pylint: disable=broad-exception-caught
                         continue
 
-        raise Exception(f"All LLM calls failed for task {task_type}. Original model: {model}")
+        raise ValueError(f"All LLM calls failed for task {task_type}. Original model: {model}")
 
-    def analyze_code_health(self, code_content: str, model: str = "gpt-4o-mini") -> dict:
+    def analyze_code_health(self, code_content: str, model: str = "gpt-4o-mini") -> Dict[str, Any]:
+        """Analyzes the code for health and quality using LLM."""
         prompt = f"""
         Analyze the following code for health and quality.
         Return a JSON object with:
@@ -171,36 +200,74 @@ class AIEngine:
         ```
         """
         try:
-            res = self._call_llm_with_fallback(model, [{"role": "user", "content": prompt}], {"type": "json_object"}, "health_analysis")
-            return {"result": json.loads(res["content"]), "stats": res["stats"], "prompt": res["prompt_used"], "response": res["ai_response"]}
-        except Exception as e:
+            res = self._call_llm_with_fallback(
+                model,
+                [{"role": "user", "content": prompt}],
+                {"type": "json_object"},
+                "health_analysis"
+            )
+            return {
+                "result": json.loads(res["content"]),
+                "stats": res["stats"],
+                "prompt": res["prompt_used"],
+                "response": res["ai_response"]
+            }
+        except Exception:  # pylint: disable=broad-exception-caught
             return {"result": {"score_percent": 50, "issues": ["Analysis failed"]}, "stats": {}}
 
-    def fix_vulnerability(self, code_content: str, vulnerability_description: str, model: str = "gpt-4o", error_feedback: str = None) -> dict:
-        prompt = f"""
-        Fix the following vulnerability in the code:
-        "{vulnerability_description}"
-
-        Return ONLY the fixed code without any markdown formatting or explanation. Ensure the entire file is returned correctly, applying only the necessary fix.
-        """
+    def fix_vulnerability(
+        self,
+        code_content: str,
+        vulnerability_description: str,
+        model: str = "gpt-4o",
+        error_feedback: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Attempts to fix a vulnerability using LLM."""
+        prompt = (
+            f"Fix the following vulnerability in the code:\n"
+            f"\"{vulnerability_description}\"\n\n"
+            f"Return ONLY the fixed code without any markdown formatting or explanation. "
+            f"Ensure the entire file is returned correctly, applying only the necessary fix.\n"
+        )
 
         if error_feedback:
-            prompt += f"\n\nWARNING: Your previous fix failed sandbox tests with the following error:\n{error_feedback}\nPlease correct the code so tests pass."
+            prompt += (
+                "\n\nWARNING: Your previous fix failed sandbox tests "
+                f"with the following error:\n{error_feedback}\n"
+                "Please correct the code so tests pass."
+            )
 
         prompt += f"\n\nCode:\n```\n{code_content[:20000]}\n```"
 
         try:
-            res = self._call_llm_with_fallback(model, [{"role": "user", "content": prompt}], None, "fix")
+            res = self._call_llm_with_fallback(
+                model,
+                [{"role": "user", "content": prompt}],
+                None,
+                "fix"
+            )
             content = res["content"]
             if content.startswith("```"):
                 content = "\n".join(content.split("\n")[1:])
             if content.endswith("```"):
                 content = "\n".join(content.split("\n")[:-1])
-            return {"fixed_code": content.strip(), "stats": res["stats"], "prompt": res["prompt_used"], "response": res["ai_response"]}
-        except Exception as e:
+            return {
+                "fixed_code": content.strip(),
+                "stats": res["stats"],
+                "prompt": res["prompt_used"],
+                "response": res["ai_response"]
+            }
+        except Exception:  # pylint: disable=broad-exception-caught
             return {"fixed_code": code_content, "stats": {}}
 
-    def analyze_and_fix_issue(self, code_content: str, issue_title: str, issue_body: str, model: str = "gpt-4o") -> dict:
+    def analyze_and_fix_issue(
+        self,
+        code_content: str,
+        issue_title: str,
+        issue_body: str,
+        model: str = "gpt-4o"
+    ) -> Dict[str, Any]:
+        """Attempts to fix a GitHub issue using LLM."""
         prompt = f"""
         Can you fix the following GitHub issue given the codebase content?
 
@@ -220,7 +287,20 @@ class AIEngine:
         ```
         """
         try:
-            res = self._call_llm_with_fallback(model, [{"role": "user", "content": prompt}], {"type": "json_object"}, "issue_fix")
-            return {"result": json.loads(res["content"]), "stats": res["stats"], "prompt": res["prompt_used"], "response": res["ai_response"]}
-        except Exception as e:
-            return {"result": {"can_fix": False, "reason": "Analysis failed", "fixed_code": None}, "stats": {}}
+            res = self._call_llm_with_fallback(
+                model,
+                [{"role": "user", "content": prompt}],
+                {"type": "json_object"},
+                "issue_fix"
+            )
+            return {
+                "result": json.loads(res["content"]),
+                "stats": res["stats"],
+                "prompt": res["prompt_used"],
+                "response": res["ai_response"]
+            }
+        except Exception:  # pylint: disable=broad-exception-caught
+            return {
+                "result": {"can_fix": False, "reason": "Analysis failed", "fixed_code": None},
+                "stats": {}
+            }

@@ -1,16 +1,31 @@
-import redis
+"""
+Logger for the AI Security Bot terminal.
+"""
 import json
 from datetime import datetime
-from sqlalchemy.orm import Session
+from typing import Optional
+import redis
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.models import TerminalLog
 
 redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
-class TerminalLogger:
+
+class TerminalLogger:  # pylint: disable=too-few-public-methods
+    """Class to handle terminal logging."""
+
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     @staticmethod
-    def log(bot_id: str, action: str, details: str = "", model: str = "", cost: float = 0.0, prompt_used: str = None, ai_response: str = None):
+    def log(
+        bot_id: str,
+        action: str,
+        details: str = "",
+        model: str = "",
+        cost: float = 0.0,
+        prompt_used: Optional[str] = None,
+        ai_response: Optional[str] = None
+    ):
         """
         Emits a log message to a Redis pub/sub channel.
         Saves full context to the database so the frontend can retrieve the exact prompt/response.
@@ -31,7 +46,7 @@ class TerminalLogger:
             db.commit()
             db.refresh(db_log)
             log_id = db_log.id
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Error saving terminal log to DB: {e}")
             log_id = None
         finally:
