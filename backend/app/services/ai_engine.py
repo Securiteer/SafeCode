@@ -95,23 +95,40 @@ class AIEngine:
             self.db.commit()
 
             return {"model": model, "cost": cost, "tokens": tokens, "provider": provider}
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error("Failed to track cost: %s", str(e))
-            return {
-                "model": actual_model,
-                "cost": 0.0,
-                "tokens": 0,
-                "provider": provider
-            }
+        except Exception as e:
+            logger.error(f"Failed to track cost: {e}")
+            return {"model": actual_model, "cost": 0.0, "tokens": 0, "provider": provider}
 
-    # pylint: disable=too-many-locals,too-many-branches
-    def _call_llm_with_fallback(
-        self,
-        model: str,
-        messages: List[Dict[str, Any]],
-        response_format: Optional[Dict[str, Any]] = None,
-        task_type: str = "generic"
-    ) -> Dict[str, Any]:
+    def _execute_llm_call(self, kwargs: dict, task_type: str, provider: str, model: str, messages: list) -> dict:
+        response = litellm.completion(**kwargs)
+        stats = self._track_cost(response, task_type, provider, model)
+        return {
+            "content": response.choices[0].message.content,
+            "stats": stats,
+            "prompt_used": json.dumps(messages, indent=2),
+            "ai_response": response.choices[0].message.content
+        }
+
+    def _attempt_call_with_keys(self, kwargs: dict, keys: list, task_type: str, provider: str, model: str, messages: list, break_on_fatal: bool) -> Optional[dict]:
+        for key in keys:
+            try:
+                if key:
+                    kwargs["api_key"] = key
+                elif "api_key" in kwargs:
+                    del kwargs["api_key"]
+
+                return self._execute_llm_call(kwargs, task_type, provider, model, messages)
+            except Exception as e:
+                if not break_on_fatal:
+                    continue
+
+                err_str = str(e).lower()
+                logger.warning(f"Failed with key on model {model}: {e}")
+                if "rate limit" not in err_str and "quota" not in err_str and "429" not in err_str:
+                    break
+        return None
+
+    def _call_llm_with_fallback(self, model: str, messages: list, response_format: dict = None, task_type: str = "generic") -> dict:
         original_provider = self._get_provider_from_model(model)
 
         fallback_conf = self.db.query(BotConfig).filter(
@@ -133,25 +150,9 @@ class AIEngine:
         if self.local_base_url and original_provider == "local":
             kwargs["api_base"] = self.local_base_url
 
-        for key in keys_to_try:
-            try:
-                if key:
-                    kwargs["api_key"] = key
-                response = litellm.completion(**kwargs)
-                stats = self._track_cost(response, task_type, original_provider, model)
-
-                # Add the actual prompt and response text so it can be logged in the database
-                return {
-                    "content": response.choices[0].message.content,
-                    "stats": stats,
-                    "prompt_used": json.dumps(messages, indent=2),
-                    "ai_response": response.choices[0].message.content
-                }
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                err_str = str(e).lower()
-                logger.warning("Failed with key on model %s: %s", model, str(e))
-                if "rate limit" not in err_str and "quota" not in err_str and "429" not in err_str:
-                    break
+        result = self._attempt_call_with_keys(kwargs, keys_to_try, task_type, original_provider, model, messages, break_on_fatal=True)
+        if result:
+            return result
 
         if auto_fallback_random:
             logger.warning("Falling back from %s to random provider.", model)
@@ -168,25 +169,9 @@ class AIEngine:
                 if "api_base" in kwargs:
                     del kwargs["api_base"]
 
-                for f_key in fallback_keys:
-                    try:
-                        if f_key:
-                            kwargs["api_key"] = f_key
-                        elif "api_key" in kwargs:
-                            del kwargs["api_key"]
-
-                        response = litellm.completion(**kwargs)
-                        stats = self._track_cost(
-                            response, task_type, fallback_provider, fallback_model
-                        )
-                        return {
-                            "content": response.choices[0].message.content,
-                            "stats": stats,
-                            "prompt_used": json.dumps(messages, indent=2),
-                            "ai_response": response.choices[0].message.content
-                        }
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        continue
+                result = self._attempt_call_with_keys(kwargs, fallback_keys, task_type, fallback_provider, fallback_model, messages, break_on_fatal=False)
+                if result:
+                    return result
 
         raise ValueError(f"All LLM calls failed for task {task_type}. Original model: {model}")
 
