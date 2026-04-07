@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Database, Search, ArrowRight, Github, Terminal, CheckCircle2, XCircle, LayoutGrid } from 'lucide-react';
+import { Database, Search, LayoutGrid } from 'lucide-react';
 
 interface RepoData {
   id: number;
