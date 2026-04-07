@@ -41,14 +41,25 @@ echo "🖥️ Starting Next.js Dashboard..."
 npm run dev > frontend.log 2>&1 &
 FRONTEND_PID=$!
 
-# 4. Wait for user termination
+# 4. Setup & Start Docs (Next.js Documentation)
+echo "📚 Setting up Documentation Site..."
+cd ../docs
+npm install
+echo "📖 Starting Documentation Server..."
+npm run dev > docs.log 2>&1 &
+DOCS_PID=$!
+
+# 5. Wait for user termination
 echo ""
 echo "✅ Swarm Successfully Deployed Locally!"
-echo "📊 Dashboard: http://localhost:3000"
-echo "🛠️  Admin Config: http://localhost:3000/admin"
+echo ""
+echo "📊 Dashboard:      http://localhost:3000"
+echo "🛠️  Admin Settings: http://localhost:3000/admin"
+echo "📚 Documentation:  http://localhost:4000"
+echo "🔌 API:            http://localhost:8000"
 echo ""
 echo "Press Ctrl+C to stop all services..."
 
 # Trap Ctrl+C to kill all background processes cleanly
-trap "echo 'Stopping all services...'; kill $BACKEND_PID $WORKER_PID $BEAT_PID $FRONTEND_PID; exit" INT
+trap "echo 'Stopping all services...'; kill $BACKEND_PID $WORKER_PID $BEAT_PID $FRONTEND_PID $DOCS_PID; exit" INT
 wait

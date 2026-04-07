@@ -5,9 +5,6 @@ const nextConfig: NextConfig = {
   // Disable typescript/eslint build errors for Docker build phase since it was already checked locally
   typescript: {
     ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
   }
 };
 

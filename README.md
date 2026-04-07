@@ -1,146 +1,203 @@
-# AI Security Swarm 🐝🛡️
+# SafeCode — AI Security Swarm 🛡️
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-purple.svg)
-![Next.js](https://img.shields.io/badge/Next.js-15-black.svg)
+![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
 ![LiteLLM](https://img.shields.io/badge/LiteLLM-supported-green.svg)
 
-Welcome to **AI Security Swarm**! A fully autonomous, multi-agent AI system designed to run 24/7. It continuously scours GitHub for popular and active repositories, runs high-speed static analysis, verifies findings with AI, and **automatically submits Pull Requests with fixed code**.
-
-🌍 **Live Local Dashboard:** [http://localhost:3000](http://localhost:3000)
+A fully autonomous, multi-agent AI system that runs 24/7. It continuously discovers popular GitHub repositories, runs high-speed static analysis (Semgrep), verifies findings with AI, sandbox-tests patches, and **automatically submits Pull Requests with fixed code**.
 
 ---
 
-## ⚡ Key Features
+## Key Features
 
-- **Multi-Agent Workflow:**
-  - **Finder Agent (Semgrep + Context):** Clones codebases locally and uses lightning-fast static analysis (Semgrep) to pinpoint vulnerabilities.
-  - **Verifier Agent:** Acts as a strict quality gate, reviewing the Finder's discoveries using a fast LLM to drastically reduce false positives.
-  - **Fixer Agent (High IQ):** Rewrites the vulnerable code locally to generate a secure patch.
-- **The Sandbox Testing Loop 🧪:** The Swarm doesn't just guess! It applies the AI's fix locally and attempts to run the repository's test suite. If the test fails, it feeds the error back to the AI for a second attempt before opening a PR!
-- **GitHub Issue Fixer 🐛:** The swarm can be configured to autonomously find open GitHub Issues on repositories, read the codebase context, and submit PRs resolving them.
-- **Intelligent Quota Fallback 🔄:** Supply multiple API keys for each provider (OpenAI, Anthropic, Gemini, Groq, Vertex). If one key hits a rate limit, the Swarm rolls over to the next. If all exhaust, it randomly shifts to a different provider to maintain 100% uptime.
-- **Real-Time Live Terminals 💻:** Watch the swarm work in real-time through WebSocket-powered terminal logs. **Click any log** to instantly view the exact prompt and response the AI processed!
-- **Beautiful Analytics 📊:** Featuring a dark glassmorphism UI, real-time charts tracking vulnerabilities over 7 days, and a Top Secured Repositories Leaderboard.
+- **Multi-Agent Pipeline** — Three specialized AI agents (Finder → Verifier → Fixer) work together to discover, validate, and patch security vulnerabilities.
+- **Sandbox Testing Loop** — Patches are applied locally and tests are run. If tests fail, the AI gets the error and retries before opening a PR.
+- **GitHub Issue Fixer** — Reads open issues on repositories and submits PRs resolving them.
+- **Intelligent Quota Fallback** — Multiple API keys per provider. If one key hits a rate limit, the swarm cycles to the next. If all exhaust, it falls back to a different provider.
+- **Real-Time Live Terminal** — Watch the swarm work via WebSocket-powered logs. Click any entry to inspect the exact prompt and AI response.
+- **Analytics Dashboard** — Real-time charts, stats, leaderboard, and per-model cost tracking.
 
-## 🛠 Tech Stack
+## Tech Stack
 
-- **Backend:** FastAPI, Python, SQLAlchemy, PostgreSQL, Redis, Celery (for 24/7 background tasks)
-- **Frontend:** Next.js 15 (App Router), React 19, Tailwind CSS v4, Framer Motion, Recharts, Lucide Icons
-- **AI Routing:** LiteLLM (Supports 100+ Models natively)
-- **Static Analysis:** Semgrep
-
----
-
-## 🚀 Setup & Installation
-
-You can run the AI Security Swarm either fully containerized via **Docker** (Recommended) or **Locally** directly on your machine. You **do not** need to manually manage `.env` files; you configure everything directly from the gorgeous frontend Admin dashboard!
-
-### 🐳 Option A: Docker Compose (Recommended - Mac/Linux/Windows)
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Securiteer/SafeCode.git
-   cd SafeCode
-   ```
-
-2. **Run the Application:**
-   ```bash
-   docker-compose up --build
-   ```
-
-3. **Initialize the Database:**
-   In a separate terminal window, run the initial database migrations:
-   ```bash
-   docker-compose exec backend alembic upgrade head
-   ```
-
-### 💻 Option B: Local Setup (Mac & Linux Without Docker)
-
-*Prerequisites: Python 3.11+, Node.js 18+, and Redis running locally on default port 6379.*
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Securiteer/SafeCode.git
-   cd SafeCode
-   ```
-
-2. **Use the Helper Script (Fastest):**
-   ```bash
-   chmod +x start_local.sh
-   ./start_local.sh
-   ```
-   *This will automatically install dependencies, start Redis (if needed), launch the backend, Celery workers, and the frontend server simultaneously.*
-
-### 🪟 Option C: Local Setup (Windows localhost Without Docker)
-
-*Prerequisites: Python 3.11+ and Node.js 18+ installed on Windows. Celery requires Redis as a message broker. Native Redis does not officially support Windows, so you must install Redis via WSL (Windows Subsystem for Linux) or install a Windows port like Memurai.*
-
-1. **Clone the repository:**
-   Open PowerShell or Git Bash:
-   ```powershell
-   git clone https://github.com/Securiteer/SafeCode.git
-   cd SafeCode
-   ```
-
-2. **Setup Backend (FastAPI & Celery):**
-   Open a PowerShell terminal for your backend:
-   ```powershell
-   cd backend
-   python -m virtualenv venv
-   .\venv\Scripts\activate
-   pip install -r requirements.txt
-
-   # Initialize the local SQLite database
-   alembic upgrade head
-
-   # Start the FastAPI server
-   set PYTHONPATH=$PWD
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-   ```
-
-3. **Start the Windows Celery Workers:**
-   Open two *new* separate PowerShell windows, activate the environment (`.\venv\Scripts\activate`) in each, and run:
-
-   **Terminal A (The Worker):** Note the `-P solo` flag, which is strictly required to run Celery locally on Windows!
-   ```powershell
-   cd backend
-   set PYTHONPATH=$PWD
-   celery -A app.core.celery_app worker -P solo --loglevel=info
-   ```
-
-   **Terminal B (The Scheduler):**
-   ```powershell
-   cd backend
-   set PYTHONPATH=$PWD
-   celery -A app.core.celery_app beat --loglevel=info
-   ```
-
-4. **Setup Frontend (Next.js):**
-   Open a final PowerShell window:
-   ```powershell
-   cd frontend
-   npm install
-   # Launch Next.js
-   npx next dev
-   ```
-
-### ⚙️ Final Configuration Step (All Platforms)
-1. Open your browser and navigate to [http://localhost:3000](http://localhost:3000).
-2. Go to the **Admin Settings** tab.
-3. Enter your **GitHub Personal Access Token** (needs `repo` permissions to allow forking and opening PRs).
-4. Add your **API Keys** for your preferred AI providers.
-5. Select your models from the searchable dropdown, turn the master switch **ON**, and hit Save to launch the swarm!
+| Layer | Technology |
+|---|---|
+| **Backend** | FastAPI, Python 3.11+, SQLAlchemy, PostgreSQL, Redis, Celery |
+| **Frontend** | Next.js 16, React 19, Tailwind CSS v4, Framer Motion, Recharts |
+| **AI Routing** | LiteLLM (supports 100+ models) |
+| **Static Analysis** | Semgrep |
+| **Docs** | Next.js (standalone, port 4000) |
 
 ---
 
-## 📚 Documentation Site
+## Setup & Installation
 
-For an in-depth dive into the architecture, fallback strategies, and how to add new AI agents, please visit our dedicated documentation website located in the `docs/` folder!
+### 🐳 Option A: Docker Compose (Recommended)
 
-To run the docs locally, navigate to the `docs` folder, install the dependencies with `npm install`, and then run `npx next dev` to launch the documentation server on your local machine.
+Works on Mac, Linux, and Windows. Starts all 7 services with one command.
+
+```bash
+git clone https://github.com/Securiteer/SafeCode.git
+cd SafeCode
+docker-compose up --build
+```
+
+Initialize the database (first time only):
+
+```bash
+docker-compose exec backend alembic upgrade head
+```
+
+**Services started:**
+
+| Service | URL |
+|---|---|
+| Dashboard | [http://localhost:3000](http://localhost:3000) |
+| Admin Settings | [http://localhost:3000/admin](http://localhost:3000/admin) |
+| Documentation | [http://localhost:4000](http://localhost:4000) |
+| API | [http://localhost:8000](http://localhost:8000) |
 
 ---
 
-*Disclaimer: This tool automatically creates forks and Pull Requests on GitHub. Please use it responsibly and adhere to GitHub's Terms of Service regarding automated actions and spam.*
+### 💻 Option B: Local Setup (Mac & Linux)
+
+Prerequisites: Python 3.11+, Node.js 18+, Redis running on port 6379.
+
+```bash
+git clone https://github.com/Securiteer/SafeCode.git
+cd SafeCode
+chmod +x start_local.sh
+./start_local.sh
+```
+
+This installs all dependencies and starts the backend, Celery workers, frontend dashboard, and documentation server.
+
+---
+
+### 🪟 Option C: Local Setup (Windows)
+
+Prerequisites: Python 3.11+, Node.js 18+. Redis requires WSL or [Memurai](https://www.memurai.com/).
+
+**Terminal 1 — Backend:**
+
+```powershell
+cd backend
+python -m virtualenv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+alembic upgrade head
+set PYTHONPATH=$PWD
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Terminal 2 — Celery Worker** (note: `-P solo` is required on Windows):
+
+```powershell
+cd backend
+.\venv\Scripts\activate
+set PYTHONPATH=$PWD
+celery -A app.core.celery_app worker -P solo --loglevel=info
+```
+
+**Terminal 3 — Celery Beat:**
+
+```powershell
+cd backend
+.\venv\Scripts\activate
+set PYTHONPATH=$PWD
+celery -A app.core.celery_app beat --loglevel=info
+```
+
+**Terminal 4 — Frontend:**
+
+```powershell
+cd frontend
+npm install
+npx next dev
+```
+
+**Terminal 5 — Docs:**
+
+```powershell
+cd docs
+npm install
+npx next dev -p 4000
+```
+
+---
+
+## Configuration
+
+All configuration is done from the **Admin Settings** page at [http://localhost:3000/admin](http://localhost:3000/admin).
+
+1. Enter your **GitHub Personal Access Token** (needs `repo` permissions for forking and PR creation).
+2. Add **API keys** for your preferred AI providers (OpenAI, Anthropic, Google Gemini, Groq, Vertex AI).
+3. Select AI **models** for the Finder, Verifier, and Fixer roles.
+4. Turn the **Master Switch** on and hit **Save**.
+
+For a complete reference of all settings, see the [Documentation](http://localhost:4000/configuration).
+
+---
+
+## Project Structure
+
+```
+SafeCode/
+├── backend/                 # FastAPI + Celery backend
+│   ├── app/
+│   │   ├── main.py          # REST & WebSocket endpoints
+│   │   ├── core/            # Config, database, Celery app
+│   │   ├── models/          # SQLAlchemy models
+│   │   ├── services/        # AI engine, GitHub, Semgrep, terminal logger
+│   │   └── tasks/           # Celery tasks (scanner, beat schedule)
+│   ├── alembic/             # Database migrations
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/                # Next.js dashboard
+│   ├── src/
+│   │   ├── app/             # Pages (dashboard, admin, repositories)
+│   │   ├── components/      # Sidebar, Terminal, Charts, Leaderboard
+│   │   └── lib/             # Utilities
+│   ├── package.json
+│   └── Dockerfile
+├── docs/                    # Next.js documentation site
+│   ├── src/app/             # Pages (overview, architecture, API, config, deployment)
+│   ├── package.json
+│   └── Dockerfile
+├── docker-compose.yml       # All services orchestration
+├── start_local.sh           # Local dev helper script
+└── README.md
+```
+
+---
+
+## Documentation
+
+Full documentation is available at [http://localhost:4000](http://localhost:4000) when running locally. It covers:
+
+- **Overview** — How the swarm works, key features, tech stack
+- **Architecture** — System diagram, backend/frontend structure, scan pipeline, fallback strategy
+- **API Reference** — All REST and WebSocket endpoints with example responses
+- **Configuration** — Every setting explained with types, defaults, and descriptions
+- **Deployment** — Docker, Mac/Linux, and Windows setup guides
+
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/stats` | Dashboard statistics |
+| `GET` | `/api/models` | Per-model usage metrics |
+| `GET` | `/api/repositories` | List scanned repositories |
+| `GET` | `/api/config` | Get swarm configuration |
+| `POST` | `/api/config` | Update swarm configuration |
+| `GET` | `/api/charts` | Vulnerability trends (7 days) |
+| `GET` | `/api/leaderboard` | Top secured repositories |
+| `GET` | `/api/terminal/{id}` | Log entry prompt & response |
+| `WS` | `/ws/terminal` | Real-time terminal log stream |
+
+---
+
+*Disclaimer: This tool automatically creates forks and Pull Requests on GitHub. Please use it responsibly and adhere to GitHub's Terms of Service regarding automated actions.*
