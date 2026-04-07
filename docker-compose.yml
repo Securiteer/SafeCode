@@ -66,5 +66,11 @@ services:
     depends_on:
       - backend
 
+  docs:
+    build:
+      context: ./docs
+    ports:
+      - "4000:4000"
+
 volumes:
   postgres_data:
