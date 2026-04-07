@@ -32,8 +32,12 @@ class AIEngine:
             ("vertexai", "vertexai_api_keys", "VERTEXAI_API_KEY")
         ]
 
+        db_keys = [p[1] for p in providers] + ["local_base_url"]
+        configs = self.db.query(BotConfig).filter(BotConfig.key.in_(db_keys)).all()
+        config_map = {conf.key: conf for conf in configs}
+
         for provider, db_key, env_var in providers:
-            conf = self.db.query(BotConfig).filter(BotConfig.key == db_key).first()
+            conf = config_map.get(db_key)
             if conf and conf.value and isinstance(conf.value, list):
                 self.api_keys[provider] = conf.value
             elif conf and conf.value and isinstance(conf.value, str):

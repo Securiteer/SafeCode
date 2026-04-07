@@ -64,6 +64,7 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
         else:
             TerminalLogger.log(bot_id, "FOUND", f"Static analysis found {len(vulns)} issues.")
 
+        vuln_records = []
         for v in vulns:
             file_path = v["file"].replace(f"{temp_dir}/", "")
             desc = v["message"]
@@ -77,8 +78,12 @@ def scan_repository_task(repo_full_name: str, bot_id: str):
                 status=VulnerabilityStatus.FOUND
             )
             db.add(vuln_record)
+            vuln_records.append((v, vuln_record, file_path, desc, severity))
+
+        if vuln_records:
             db.commit()
 
+        for v, vuln_record, file_path, desc, severity in vuln_records:
             TerminalLogger.log(bot_id, "RAG", f"Extracting context for {file_path}...")
             code_context = SemgrepService.get_file_context(temp_dir, file_path)
 

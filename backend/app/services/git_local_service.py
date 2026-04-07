@@ -17,6 +17,11 @@ class GitLocalService:
         """
         Clones a repository securely using the provided token to a local directory.
         """
+        def redact(text: str) -> str:
+            if not token:
+                return text
+            return text.replace(token, "********")
+
         try:
             # Construct URL with token
             url = repo_url.replace("https://", f"https://{token}@")
