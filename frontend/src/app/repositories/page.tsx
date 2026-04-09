@@ -1,118 +1,198 @@
-"use client";
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { Database, Search, LayoutGrid } from 'lucide-react';
+'use client'
 
-interface RepoData {
-  id: number;
-  full_name: string;
-  stars: number;
-  code_quality_percent: number | null;
-  themes: string[];
-  last_scanned_at: string | null;
-  created_at: string;
+import { useEffect, useState, useMemo } from 'react'
+import { AppLayout } from '@/components/app-layout'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { Search, Star } from 'lucide-react'
+
+interface Repository {
+  id: string
+  target: string
+  stars: number
+  integrityScore: number
+  clusters: string[]
+  lastEncounter: string
 }
 
-export default function Repositories() {
-  const [repos, setRepos] = useState<RepoData[]>([]);
+export default function RepositoriesPage() {
+  const [repositories, setRepositories] = useState<Repository[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    fetch(`${apiUrl}/api/repositories?limit=100`)
-      .then(res => res.json())
-      .then(setRepos)
-      .catch(console.error);
-  }, []);
+    const fetchRepositories = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const response = await fetch(`${apiUrl}/api/repositories?limit=100`)
 
-  const [search, setSearch] = useState('');
-  const filteredRepos = repos.filter((r: RepoData) => r.full_name?.toLowerCase().includes(search.toLowerCase()));
+        if (response.ok) {
+           const data = await response.json();
+           const formattedRepos = data.map((r: { id: number, full_name: string, stars: number, code_quality_percent: number | null, themes: string[], last_scanned_at: string | null, created_at: string }) => ({
+             id: r.id.toString(),
+             target: r.full_name,
+             stars: r.stars,
+             integrityScore: r.code_quality_percent || 0,
+             clusters: r.themes || [],
+             lastEncounter: r.last_scanned_at ? new Date(r.last_scanned_at).toLocaleString() : new Date(r.created_at).toLocaleString()
+           }))
+           setRepositories(formattedRepos)
+        }
+
+        setLoading(false)
+      } catch (error) {
+        console.error('Failed to fetch repositories:', error)
+        setLoading(false)
+      }
+    }
+
+    fetchRepositories()
+  }, [])
+
+  const filteredRepos = useMemo(() => {
+    if (searchQuery.trim() === '') {
+      return repositories
+    } else {
+      return repositories.filter(
+        (repo) =>
+          repo.target.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          repo.clusters.some((cluster) =>
+            cluster.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+      )
+    }
+  }, [searchQuery, repositories])
+
+  const getScoreColor = (score: number) => {
+    if (score >= 90) return 'text-green-500'
+    if (score >= 75) return 'text-yellow-500'
+    return 'text-destructive'
+  }
+
+  const getScoreProgressColor = (score: number) => {
+    if (score >= 90) return 'bg-green-500'
+    if (score >= 75) return 'bg-yellow-500'
+    return 'bg-destructive'
+  }
 
   return (
-    <main className="min-h-screen text-white p-4 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center pb-8 border-b border-purple-900/50">
-          <div>
-            <h1 className="text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-fuchsia-500 to-indigo-500 neon-text flex items-center gap-3">
-              <Database className="w-10 h-10 text-purple-500" />
-              Scanned Repositories
-            </h1>
-            <p className="text-purple-300 mt-2 font-medium">Database of codebases analyzed by the swarm</p>
-          </div>
-          <nav className="space-x-4 mt-6 md:mt-0 flex">
-            <Link href="/" className="flex items-center gap-2 text-gray-300 hover:text-white px-5 py-2.5 rounded-lg glass-panel hover:bg-purple-900/30 transition-all shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:shadow-[0_0_20px_rgba(168,85,247,0.3)]">
-              <LayoutGrid className="w-4 h-4" /> Dashboard
-            </Link>
-          </nav>
-        </header>
-
-        <div className="relative max-w-xl">
-          <Search className="absolute left-4 top-3.5 w-5 h-5 text-purple-500" />
-          <input
-            type="text"
-            placeholder="Search repositories by name..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full bg-black/40 border border-purple-900/50 rounded-xl py-3 pl-12 pr-4 text-white focus:ring-fuchsia-500 focus:border-fuchsia-500 transition shadow-inner font-mono text-sm"
-          />
+    <AppLayout>
+      <div className="p-8 space-y-8">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Repositories</h1>
+          <p className="text-muted-foreground mt-1">Browse and analyze scanned codebases</p>
         </div>
 
-        <div className="glass-panel rounded-2xl overflow-hidden shadow-2xl">
-          <table className="w-full text-left">
-            <thead className="bg-purple-950/40 border-b border-purple-900/50">
-              <tr>
-                <th className="p-5 font-semibold text-purple-200">Repository Target</th>
-                <th className="p-5 font-semibold text-purple-200">Star Rating</th>
-                <th className="p-5 font-semibold text-purple-200">Integrity Score</th>
-                <th className="p-5 font-semibold text-purple-200">Thematic Clusters</th>
-                <th className="p-5 font-semibold text-purple-200">Last Encounter</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-purple-900/30">
-              {filteredRepos.map((repo: RepoData) => (
-                <tr key={repo.id} className="hover:bg-purple-900/20 transition-colors">
-                  <td className="p-5 font-medium">
-                    <a href={`https://github.com/${repo.full_name}`} target="_blank" rel="noreferrer" className="text-fuchsia-300 hover:text-fuchsia-100 hover:underline">
-                      {repo.full_name}
-                    </a>
-                  </td>
-                  <td className="p-5 text-gray-300 flex items-center gap-2 font-mono">
-                    <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
-                    {repo.stars?.toLocaleString() || 0}
-                  </td>
-                  <td className="p-5">
-                    {repo.code_quality_percent !== null ? (
-                      <div className="flex items-center gap-3">
-                        <div className="w-full bg-purple-950/50 rounded-full h-2 max-w-[120px] overflow-hidden border border-purple-900/50">
-                          <div className={`h-full rounded-full transition-all duration-1000 ${repo.code_quality_percent > 80 ? 'bg-gradient-to-r from-emerald-500 to-green-400' : repo.code_quality_percent > 50 ? 'bg-gradient-to-r from-yellow-500 to-amber-400' : 'bg-gradient-to-r from-rose-500 to-red-500'}`} style={{ width: `${repo.code_quality_percent}%` }}></div>
-                        </div>
-                        <span className="text-sm font-bold text-gray-200 drop-shadow-md">{repo.code_quality_percent}%</span>
-                      </div>
-                    ) : <span className="text-purple-400/50 text-sm italic tracking-wide">PENDING</span>}
-                  </td>
-                  <td className="p-5">
-                    <div className="flex flex-wrap gap-2">
-                      {repo.themes && repo.themes.slice(0, 3).map((theme: string) => (
-                        <span key={theme} className="px-2.5 py-1 bg-purple-950/50 text-[10px] uppercase font-bold tracking-wider rounded-md text-fuchsia-200 border border-fuchsia-900/30">
-                          {theme}
-                        </span>
-                      ))}
-                      {repo.themes && repo.themes.length > 3 && (
-                        <span className="px-2.5 py-1 text-purple-400 text-xs font-bold bg-purple-950/20 rounded-md">+{repo.themes.length - 3}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="p-5 text-sm text-purple-300/70 font-mono">
-                    {repo.last_scanned_at ? new Date(repo.last_scanned_at).toLocaleString() : new Date(repo.created_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-              {repos.length === 0 && (
-                <tr><td colSpan={5} className="p-12 text-center text-purple-300/50 italic tracking-wide">No targets have been analyzed by the swarm yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {/* Search Bar */}
+        <Card className="border-border">
+          <CardContent className="pt-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search repositories by name or cluster..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Repository Table */}
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle>Scanned Repositories</CardTitle>
+            <CardDescription>
+              {loading ? 'Loading...' : `${filteredRepos.length} repositories found`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="h-[400px] flex items-center justify-center text-muted-foreground">
+                Loading repositories...
+              </div>
+            ) : (
+              <div className="rounded-md border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Repository Target</TableHead>
+                      <TableHead className="text-center">Rating</TableHead>
+                      <TableHead>Integrity Score</TableHead>
+                      <TableHead>Thematic Clusters</TableHead>
+                      <TableHead>Last Encounter</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredRepos.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                          No repositories found matching your search.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredRepos.map((repo) => (
+                        <TableRow key={repo.id}>
+                          <TableCell className="font-medium text-foreground">
+                            {repo.target}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-1">
+                              {Array.from({ length: 5 }).map((_, index) => (
+                                <Star
+                                  key={index}
+                                  className={`w-4 h-4 ${
+                                    index < repo.stars
+                                      ? 'fill-yellow-500 text-yellow-500'
+                                      : 'text-muted'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-2 min-w-[200px]">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className={`font-semibold ${getScoreColor(repo.integrityScore)}`}>
+                                  {repo.integrityScore}%
+                                </span>
+                              </div>
+                              <div className="relative">
+                                <Progress value={repo.integrityScore} className="h-2" />
+                                <div
+                                  className={`absolute top-0 left-0 h-2 rounded-full transition-all ${getScoreProgressColor(repo.integrityScore)}`}
+                                  style={{ width: `${repo.integrityScore}%` }}
+                                />
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1.5">
+                              {repo.clusters.map((cluster) => (
+                                <Badge key={cluster} variant="secondary" className="text-xs">
+                                  {cluster}
+                                </Badge>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {repo.lastEncounter}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </main>
-  );
+    </AppLayout>
+  )
 }

@@ -1,33 +1,26 @@
-import type { Metadata } from "next";
-import { Outfit, JetBrains_Mono } from "next/font/google";
-import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+import { Toaster } from "@/components/ui/sonner"
 
-const outfit = Outfit({ subsets: ["latin"] });
-const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "SafeCode — AI Security Swarm",
-  description: "Autonomous multi-agent AI system for continuous repository security scanning and remediation.",
-};
+  title: 'SafeCode - AI Security Swarm',
+  description: 'Enterprise AI-powered code security analysis and vulnerability detection',
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${outfit.className} ${mono.variable} min-h-screen text-zinc-100`}>
-        <div className="ambient-blob ambient-blob-1" />
-        <div className="ambient-blob ambient-blob-2" />
-        <div className="relative z-10 flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 min-h-screen overflow-y-auto">
-            {children}
-          </main>
-        </div>
+      <body className={`${inter.className} font-sans antialiased`}>
+        {children}
+        <Toaster />
       </body>
     </html>
-  );
+  )
 }
